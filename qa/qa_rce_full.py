@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "engines"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 PASS = 0
 FAIL = 0
@@ -119,8 +120,7 @@ def test_scene_graph_filters_noise():
 # --- Demo mode backend test ---
 
 def test_demo_scan():
-    import asyncio
-    from backend.spatial_impl import _demo_scan_result
+    from spatial_impl import _demo_scan_result
     result = _demo_scan_result()
     assert "scan_id" in result
     assert "scene_graph" in result
@@ -129,7 +129,7 @@ def test_demo_scan():
 
 
 def test_demo_diff():
-    from backend.spatial_impl import _demo_diff_result
+    from spatial_impl import _demo_diff_result
     result = _demo_diff_result()
     assert "changes" in result
     assert "summary" in result
