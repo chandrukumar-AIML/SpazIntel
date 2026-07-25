@@ -66,10 +66,10 @@ async def _scan(payload: dict) -> SpatialResponse:
     logger.info("scan_id=%s stage=capture", scan_id)
     frames = extract_frames(video_path, str(frames_dir))
 
-    # Stage 2 — COLMAP (local, CPU)
-    from rce.reconstruct import run_colmap
-    logger.info("scan_id=%s stage=colmap", scan_id)
-    colmap_result = run_colmap(str(frames_dir), str(colmap_dir))
+    # Stage 2 — Package frames for Colab (COLMAP + gsplat run on Colab T4)
+    from rce.reconstruct import package_frames_for_colab
+    logger.info("scan_id=%s stage=package_for_colab", scan_id)
+    frames_zip = package_frames_for_colab(str(frames_dir), str(scan_dir))
 
     # Stage 3 — Object Detection (CPU, no CUDA needed)
     logger.info("scan_id=%s stage=detect", scan_id)
@@ -89,8 +89,8 @@ async def _scan(payload: dict) -> SpatialResponse:
         "frames_extracted": len(frames),
         "objects_detected": len(graph["objects"]),
         "scene_graph_path": str(graph_path),
-        "colmap_zip": colmap_result["colmap_zip"],
-        "next_step": "Upload colmap_zip to Colab notebook → train gsplat → download splat_result.zip → call register_splat",
+        "frames_zip": frames_zip,
+        "next_step": "Upload frames_zip to Colab notebook (docs/colab_gsplat_train.ipynb) → COLMAP + gsplat on T4 → download splat_result.zip → call register_splat action",
     })
 
 
