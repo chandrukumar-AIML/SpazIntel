@@ -72,11 +72,13 @@ def build_scene_graph(
 
 def _estimate_position(dets: list[dict]) -> dict:
     """
-    Rough 2D centroid from bbox detections (normalized 0-1).
+    Rough 2D centroid normalised to [0, 1] from bbox pixel coordinates.
     Phase 1 approximation — replaced with Depth Anything v2 in Week 3.
+    Assumes 1920x1080 source frames (capture.py extracts at original resolution).
     """
-    xs = [(d["bbox"][0] + d["bbox"][2]) / 2 for d in dets]
-    ys = [(d["bbox"][1] + d["bbox"][3]) / 2 for d in dets]
+    IMG_W, IMG_H = 1920.0, 1080.0
+    xs = [((d["bbox"][0] + d["bbox"][2]) / 2) / IMG_W for d in dets]
+    ys = [((d["bbox"][1] + d["bbox"][3]) / 2) / IMG_H for d in dets]
     return {
         "x_norm": round(sum(xs) / len(xs), 3),
         "y_norm": round(sum(ys) / len(ys), 3),
