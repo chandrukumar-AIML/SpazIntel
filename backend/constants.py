@@ -18,7 +18,8 @@ SCAN_STATUS_FAILED = "failed"
 PROMPT_SPATIAL_QA_VERSION = "v1.0"
 PROMPT_CHANGE_DETECT_VERSION = "v1.0"
 
-# LLM models
-LLM_PRIMARY = "claude-sonnet-5-20251101"
-LLM_FALLBACK_1 = "groq/llama-3.3-70b-versatile"
-LLM_FALLBACK_2 = "gemini/gemini-2.0-flash"
+# LLM fallback chain
+# Chain: Claude (cloud) → Ollama (local) → error
+LLM_PRIMARY        = "claude-sonnet-5-20251101"   # needs ANTHROPIC_API_KEY
+LLM_OLLAMA_MODEL   = "llama3.2:latest"             # local Ollama, always available
+LLM_OLLAMA_HOST    = "http://localhost:11434"

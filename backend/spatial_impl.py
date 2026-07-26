@@ -13,7 +13,7 @@ from typing import Any
 from models import SpatialResponse
 from constants import (
     ACTION_SCAN, ACTION_QUERY, ACTION_DIFF, ACTION_STATUS,
-    LLM_PRIMARY, PROMPT_SPATIAL_QA_VERSION,
+    LLM_PRIMARY, LLM_OLLAMA_MODEL, PROMPT_SPATIAL_QA_VERSION,
 )
 
 logger = logging.getLogger(__name__)
@@ -126,27 +126,50 @@ async def _query(payload: dict) -> SpatialResponse:
 
 
 async def _llm_query(question: str, scene_graph: dict) -> str:
+    """
+    LLM fallback chain:
+      1. Claude via Anthropic API  (if ANTHROPIC_API_KEY is set)
+      2. Ollama llama3.2 local     (always available as fallback)
+    """
     import asyncio
-    import anthropic
-
     system_prompt = _load_prompt("spatial_qa_v1.txt")
     graph_json = json.dumps(scene_graph, indent=2)
+    user_msg = f"Scene graph:\n{graph_json}\n\nQuestion: {question}"
 
+    if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_key_here":
+        try:
+            return await asyncio.to_thread(_call_claude, system_prompt, user_msg)
+        except Exception as e:
+            logger.warning("Claude failed (%s) — falling back to Ollama", e)
+
+    # Ollama fallback
+    return await asyncio.to_thread(_call_ollama, system_prompt, user_msg)
+
+
+def _call_claude(system_prompt: str, user_msg: str) -> str:
+    import anthropic
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    msg = client.messages.create(
+        model=LLM_PRIMARY,
+        max_tokens=512,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    logger.info("llm=claude model=%s", LLM_PRIMARY)
+    return msg.content[0].text
 
-    def _call():
-        msg = client.messages.create(
-            model=LLM_PRIMARY,
-            max_tokens=512,
-            system=system_prompt,
-            messages=[{
-                "role": "user",
-                "content": f"Scene graph:\n{graph_json}\n\nQuestion: {question}"
-            }]
-        )
-        return msg.content[0].text
 
-    return await asyncio.to_thread(_call)
+def _call_ollama(system_prompt: str, user_msg: str) -> str:
+    import ollama
+    resp = ollama.chat(
+        model=LLM_OLLAMA_MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_msg},
+        ],
+    )
+    logger.info("llm=ollama model=%s", LLM_OLLAMA_MODEL)
+    return resp.message.content
 
 
 def _load_prompt(filename: str) -> str:
