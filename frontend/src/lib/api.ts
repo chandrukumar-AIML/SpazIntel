@@ -48,10 +48,11 @@ export interface SceneObject {
 
 export interface JobStatus {
   scan_id: string;
-  status: "queued" | "extracting" | "detecting" | "building_graph" | "complete" | "error" | "not_found";
+  status: "queued" | "extracting" | "depth" | "detecting" | "colmap" | "splat" | "building_graph" | "complete" | "error" | "not_found";
   step: string;
   frames_count: number;
   objects_found: number;
+  has_splat: boolean;
   error: string | null;
 }
 

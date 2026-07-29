@@ -30,10 +30,10 @@ export default function App() {
     setView("scanning");
   }
 
-  function onComplete(id: string, count: number) {
+  function onComplete(id: string, count: number, splat: boolean) {
     setScanId(id);
     setObjCount(count);
-    setHasSplat(false);   // new uploads don't have a splat yet
+    setHasSplat(splat);
     setView("explore");
   }
 
@@ -42,7 +42,7 @@ export default function App() {
     setView("upload");
   }
 
-  const splatUrl = `${BACKEND}/static/splat.ply`;
+  const splatUrl = `${BACKEND}/static/${scanId}/splat/splat.ply`;
 
   return (
     <AnimatePresence mode="wait">

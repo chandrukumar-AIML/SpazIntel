@@ -29,9 +29,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_SPLAT_DIR = Path(__file__).parent.parent / "data" / "scans" / "scan_001" / "splat"
-if _SPLAT_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(_SPLAT_DIR)), name="static")
+_SCANS_STATIC_DIR = Path(__file__).parent.parent / "data" / "scans"
+if _SCANS_STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(_SCANS_STATIC_DIR)), name="static")
 
 
 @app.get("/health")
