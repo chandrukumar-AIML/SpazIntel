@@ -1,0 +1,162 @@
+import React, { useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { api } from "../lib/api";
+
+interface Props {
+  onScanStarted: (scanId: string) => void;
+}
+
+export function UploadPanel({ onScanStarted }: Props) {
+  const [files, setFiles] = useState<File[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function accept(incoming: FileList | null) {
+    if (!incoming) return;
+    const arr = Array.from(incoming);
+    setError("");
+    setFiles(arr);
+  }
+
+  const isVideo = files.length === 1 && files[0].type.startsWith("video/");
+  const isImages = files.length > 0 && files.every(f => f.type.startsWith("image/"));
+  const valid = isVideo || (isImages && files.length >= 6);
+
+  const label = files.length === 0
+    ? null
+    : isVideo
+      ? files[0].name
+      : `${files.length} images selected`;
+
+  async function startScan() {
+    if (!valid || uploading) return;
+    setUploading(true);
+    setError("");
+    try {
+      const res = await api.upload(files);
+      onScanStarted(res.scan_id);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div style={styles.root}>
+      {/* Header */}
+      <div style={styles.header}>
+        <span style={styles.dot} />
+        <span style={styles.title}>SpazIntel</span>
+        <span style={styles.sub}>Spatial Intelligence Platform</span>
+      </div>
+
+      {/* Upload card */}
+      <motion.div
+        style={styles.card}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+      >
+        <div style={styles.cardTitle}>Scan a Room</div>
+        <div style={styles.cardSub}>Upload a video walkthrough or 6+ photos taken in order around the room</div>
+
+        {/* Drop zone */}
+        <div
+          style={{ ...styles.dropzone, ...(dragging ? styles.dropzoneDrag : {}) }}
+          onDragOver={e => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={e => { e.preventDefault(); setDragging(false); accept(e.dataTransfer.files); }}
+          onClick={() => inputRef.current?.click()}
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            accept="video/*,image/*"
+            multiple
+            style={{ display: "none" }}
+            onChange={e => accept(e.target.files)}
+          />
+
+          <AnimatePresence mode="wait">
+            {files.length === 0 ? (
+              <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={styles.dropContent}>
+                <div style={styles.dropIcon}>📷</div>
+                <div style={styles.dropText}>Drop video or photos here</div>
+                <div style={styles.dropHint}>or click to browse</div>
+              </motion.div>
+            ) : (
+              <motion.div key="files" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={styles.dropContent}>
+                <div style={styles.dropIcon}>{isVideo ? "🎥" : "🖼️"}</div>
+                <div style={{ ...styles.dropText, color: valid ? "var(--success)" : "var(--warning)" }}>
+                  {label}
+                </div>
+                {!valid && isImages && files.length < 6 && (
+                  <div style={styles.dropHint}>Need at least 6 images ({files.length} selected)</div>
+                )}
+                <div style={styles.dropHint}>Click to change</div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Tips */}
+        <div style={styles.tips}>
+          <TipRow icon="🎥" text="Video: slow 360° walkthrough, 15–60 sec" />
+          <TipRow icon="🖼️" text="Photos: 6+ shots from different angles, good overlap" />
+          <TipRow icon="💡" text="Good lighting = better detection" />
+        </div>
+
+        {error && <div style={styles.error}>{error}</div>}
+
+        <button
+          style={{ ...styles.btn, ...(!valid || uploading ? styles.btnDisabled : {}) }}
+          onClick={startScan}
+          disabled={!valid || uploading}
+        >
+          {uploading ? "Uploading…" : "Start Scan"}
+        </button>
+      </motion.div>
+
+      {/* Or load existing */}
+      <div style={styles.existingRow}>
+        or &nbsp;
+        <button style={styles.link} onClick={() => onScanStarted("scan_001")}>
+          load scan_001 (demo room)
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TipRow({ icon, text }: { icon: string; text: string }) {
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "var(--text-3)" }}>
+      <span>{icon}</span><span>{text}</span>
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  root:        { display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100vh", background:"var(--bg)", gap:16, padding:24 },
+  header:      { display:"flex", alignItems:"center", gap:8, marginBottom:8 },
+  dot:         { width:10, height:10, borderRadius:"50%", background:"linear-gradient(135deg,#6366f1,#8b5cf6)" },
+  title:       { fontWeight:700, fontSize:18, letterSpacing:"-0.01em" },
+  sub:         { fontSize:12, color:"var(--text-3)" },
+  card:        { background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", padding:28, width:"100%", maxWidth:480, display:"flex", flexDirection:"column", gap:16 },
+  cardTitle:   { fontSize:20, fontWeight:700, letterSpacing:"-0.01em" },
+  cardSub:     { fontSize:13, color:"var(--text-2)", lineHeight:1.5 },
+  dropzone:    { border:"2px dashed var(--border)", borderRadius:"var(--radius)", padding:"32px 24px", cursor:"pointer", transition:"border-color 0.15s, background 0.15s", textAlign:"center" as const },
+  dropzoneDrag:{ borderColor:"var(--accent)", background:"rgba(99,102,241,0.05)" },
+  dropContent: { display:"flex", flexDirection:"column", alignItems:"center", gap:8 },
+  dropIcon:    { fontSize:32 },
+  dropText:    { fontSize:14, fontWeight:600 },
+  dropHint:    { fontSize:12, color:"var(--text-3)" },
+  tips:        { display:"flex", flexDirection:"column", gap:8, padding:"12px 14px", background:"var(--surface-2)", borderRadius:"var(--radius)" },
+  error:       { fontSize:12, color:"var(--danger)", textAlign:"center" as const },
+  btn:         { background:"var(--accent)", color:"#fff", border:"none", borderRadius:"var(--radius)", padding:"11px 0", fontSize:14, fontWeight:700, cursor:"pointer", width:"100%", letterSpacing:"0.01em" },
+  btnDisabled: { opacity:0.4, cursor:"not-allowed" },
+  existingRow: { fontSize:12, color:"var(--text-3)" },
+  link:        { background:"none", border:"none", color:"var(--accent)", fontSize:12, cursor:"pointer", padding:0, textDecoration:"underline" },
+};
