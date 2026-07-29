@@ -34,6 +34,14 @@ const ACCENT_COLORS = [
 ];
 
 export function LiveCapture({ onBack }: Props) {
+  const [isMobile, setIsMobile] = React.useState(window.innerWidth < 680);
+
+  React.useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 680);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+
   const videoRef   = useRef<HTMLVideoElement>(null);
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const mapRef     = useRef<HTMLCanvasElement>(null);
@@ -278,7 +286,7 @@ export function LiveCapture({ onBack }: Props) {
       </div>
 
       {/* Main layout */}
-      <div style={s.layout}>
+      <div style={{ ...s.layout, gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gridTemplateRows: isMobile ? "1fr 1fr" : "1fr" }}>
         {/* Left: camera */}
         <div style={s.pane}>
           <div style={s.paneLabel}>Camera Feed</div>

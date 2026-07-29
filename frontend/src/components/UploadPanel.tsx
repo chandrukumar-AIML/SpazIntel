@@ -6,10 +6,11 @@ interface Props {
   onScanStarted: (scanId: string) => void;
   onOpenCamera: () => void;
   onOpenLive: () => void;
+  onOpenGallery: () => void;
   onDemoMap: () => void;
 }
 
-export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onDemoMap }: Props) {
+export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGallery, onDemoMap }: Props) {
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -138,13 +139,16 @@ export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onDemoMap
 
       {/* Or load existing */}
       <div style={styles.existingRow}>
-        or &nbsp;
-        <button style={styles.link} onClick={() => onScanStarted("scan_001")}>
-          load scan_001 (3D splat)
+        <button style={styles.galleryBtn} onClick={onOpenGallery}>
+          📂 My Scans
         </button>
-        &nbsp;·&nbsp;
+        <span style={{ color:"var(--text-3)" }}>·</span>
+        <button style={styles.link} onClick={() => onScanStarted("scan_001")}>
+          load scan_001
+        </button>
+        <span style={{ color:"var(--text-3)" }}>·</span>
         <button style={styles.link} onClick={onDemoMap}>
-          room map view
+          room map
         </button>
       </div>
     </div>
@@ -160,7 +164,7 @@ function TipRow({ icon, text }: { icon: string; text: string }) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  root:        { display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100vh", background:"var(--bg)", gap:16, padding:24 },
+  root:        { display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", minHeight:"100vh", background:"var(--bg)", gap:16, padding:24, overflowY:"auto" },
   header:      { display:"flex", alignItems:"center", gap:8, marginBottom:8 },
   dot:         { width:10, height:10, borderRadius:"50%", background:"linear-gradient(135deg,#6366f1,#8b5cf6)" },
   title:       { fontWeight:700, fontSize:18, letterSpacing:"-0.01em" },
@@ -182,6 +186,7 @@ const styles: Record<string, React.CSSProperties> = {
   dividerText: { fontSize:11, color:"var(--text-3)", whiteSpace:"nowrap" as const, width:"100%", textAlign:"center" as const },
   btn:         { background:"var(--surface-2)", color:"var(--text-2)", border:"1px solid var(--border)", borderRadius:"var(--radius)", padding:"11px 0", fontSize:14, fontWeight:600, cursor:"pointer", width:"100%" },
   btnDisabled: { opacity:0.4, cursor:"not-allowed" },
-  existingRow: { fontSize:12, color:"var(--text-3)" },
+  existingRow: { fontSize:12, color:"var(--text-3)", display:"flex", alignItems:"center", gap:8, justifyContent:"center" },
+  galleryBtn:  { background:"var(--surface-2)", border:"1px solid var(--border)", color:"var(--text-2)", borderRadius:"var(--radius)", padding:"5px 12px", fontSize:12, fontWeight:600, cursor:"pointer" },
   link:        { background:"none", border:"none", color:"var(--accent)", fontSize:12, cursor:"pointer", padding:0, textDecoration:"underline" },
 };

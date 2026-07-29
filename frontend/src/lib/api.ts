@@ -40,6 +40,11 @@ export const api = {
 
   measure: (scan_id: string, label_a: string, label_b: string) =>
     action<{ label_a: string; label_b: string; distance_m: number; note: string }>("measure", { scan_id, label_a, label_b }),
+
+  listScans: (): Promise<{ scans: ScanSummary[] }> =>
+    fetch(`${BASE}/api/scans`).then(r => r.json()),
+
+  exportUrl: (scan_id: string) => `${BASE}/api/spatial/export/${scan_id}`,
 };
 
 export interface SceneObject {
@@ -57,6 +62,14 @@ export interface JobStatus {
   objects_found: number;
   has_splat: boolean;
   error: string | null;
+}
+
+export interface ScanSummary {
+  scan_id: string;
+  status: string;
+  objects_found: number;
+  has_splat: boolean;
+  created_at: number;
 }
 
 export interface DiffResult {

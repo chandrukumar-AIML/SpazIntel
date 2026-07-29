@@ -1,60 +1,91 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { SplatViewer } from "./components/SplatViewer";
-import { RoomMap } from "./components/RoomMap";
-import { ChatPanel } from "./components/ChatPanel";
-import { DiffPanel } from "./components/DiffPanel";
-import { UploadPanel } from "./components/UploadPanel";
-import { ScanProgress } from "./components/ScanProgress";
+import { SplatViewer }   from "./components/SplatViewer";
+import { RoomMap }       from "./components/RoomMap";
+import { ChatPanel }     from "./components/ChatPanel";
+import { DiffPanel }     from "./components/DiffPanel";
+import { UploadPanel }   from "./components/UploadPanel";
+import { ScanProgress }  from "./components/ScanProgress";
 import { CameraCapture } from "./components/CameraCapture";
-import { LiveCapture } from "./components/LiveCapture";
+import { LiveCapture }   from "./components/LiveCapture";
+import { ScansGallery }  from "./components/ScansGallery";
+import { api }           from "./lib/api";
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8000";
-type View = "upload" | "camera" | "live" | "scanning" | "explore";
+type View = "upload" | "gallery" | "camera" | "live" | "scanning" | "explore";
 type RightTab = "chat" | "diff";
 
 export default function App() {
-  const [view, setView]       = useState<View>("upload");
-  const [scanId, setScanId]   = useState("scan_001");
+  const [view, setView]         = useState<View>("upload");
+  const [scanId, setScanId]     = useState("scan_001");
   const [objCount, setObjCount] = useState(0);
-  const [hasSplat, setHasSplat] = useState(true);   // scan_001 has splat by default
+  const [hasSplat, setHasSplat] = useState(true);
   const [rightTab, setRightTab] = useState<RightTab>("chat");
+
+  // ── URL routing: ?scan=scan_id on load ────────────────────────────────────
+  useEffect(() => {
+    const params    = new URLSearchParams(window.location.search);
+    const scanParam = params.get("scan");
+    if (scanParam) {
+      setScanId(scanParam);
+      setHasSplat(false);
+      setView("explore");
+      api.jobStatus(scanParam)
+        .then(job => { if (job.status === "complete") setHasSplat(job.has_splat ?? false); })
+        .catch(() => {});
+    }
+  }, []);
+
+  function pushScanUrl(id: string) {
+    window.history.pushState(null, "", `?scan=${id}`);
+  }
 
   function onScanStarted(id: string) {
     setScanId(id);
-    if (id === "scan_001") {
-      setHasSplat(true);
-      setView("explore");
-      return;
-    }
+    if (id === "scan_001") { setHasSplat(true); pushScanUrl(id); setView("explore"); return; }
     setHasSplat(false);
     setView("scanning");
   }
 
   function onComplete(id: string, count: number, splat: boolean) {
-    setScanId(id);
-    setObjCount(count);
-    setHasSplat(splat);
+    setScanId(id); setObjCount(count); setHasSplat(splat);
+    pushScanUrl(id);
     setView("explore");
   }
 
-  function onError(msg: string) {
-    alert(`Scan failed: ${msg}`);
+  function openScan(id: string, splat: boolean) {
+    setScanId(id); setHasSplat(splat); setObjCount(0);
+    pushScanUrl(id);
+    setView("explore");
+  }
+
+  function goUpload() {
+    window.history.pushState(null, "", window.location.pathname);
     setView("upload");
   }
+
+  function onError(msg: string) { alert(`Scan failed: ${msg}`); goUpload(); }
 
   const splatUrl = `${BACKEND}/static/${scanId}/splat/splat.ply`;
 
   return (
     <AnimatePresence mode="wait">
+
       {view === "upload" && (
         <motion.div key="upload" style={styles.page} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
           <UploadPanel
             onScanStarted={onScanStarted}
             onOpenCamera={() => setView("camera")}
             onOpenLive={() => setView("live")}
-            onDemoMap={() => { setScanId("scan_001"); setHasSplat(false); setView("explore"); }}
+            onOpenGallery={() => setView("gallery")}
+            onDemoMap={() => { setScanId("scan_001"); setHasSplat(false); pushScanUrl("scan_001"); setView("explore"); }}
           />
+        </motion.div>
+      )}
+
+      {view === "gallery" && (
+        <motion.div key="gallery" style={styles.page} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
+          <ScansGallery onOpen={openScan} onNewScan={goUpload} />
         </motion.div>
       )}
 
@@ -62,14 +93,14 @@ export default function App() {
         <motion.div key="camera" style={styles.page} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
           <CameraCapture
             onScanStarted={id => { setScanId(id); setHasSplat(false); setView("scanning"); }}
-            onBack={() => setView("upload")}
+            onBack={goUpload}
           />
         </motion.div>
       )}
 
       {view === "live" && (
         <motion.div key="live" style={styles.page} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
-          <LiveCapture onBack={() => setView("upload")} />
+          <LiveCapture onBack={goUpload} />
         </motion.div>
       )}
 
@@ -81,7 +112,6 @@ export default function App() {
 
       {view === "explore" && (
         <motion.div key="explore" style={styles.root} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
-          {/* Topbar */}
           <header style={styles.topbar}>
             <div style={styles.wordmark}>
               <span style={styles.logoDot} />
@@ -93,33 +123,37 @@ export default function App() {
               {scanId}
               {objCount > 0 && <span style={styles.countBadge}>{objCount} objects</span>}
             </div>
-            <button style={styles.newScanBtn} onClick={() => setView("upload")}>
-              + New Scan
-            </button>
+            <div style={styles.topbarActions}>
+              <button
+                style={styles.iconBtn}
+                title="Copy shareable link"
+                onClick={e => {
+                  const url = `${window.location.origin}${window.location.pathname}?scan=${scanId}`;
+                  navigator.clipboard.writeText(url).catch(() => {});
+                  const btn = e.currentTarget;
+                  btn.textContent = "✓";
+                  setTimeout(() => { btn.textContent = "🔗"; }, 1200);
+                }}
+              >
+                🔗
+              </button>
+              <a href={api.exportUrl(scanId)} download={`${scanId}.zip`} style={styles.iconBtn} title="Download scan (zip)">↓</a>
+              <button style={styles.newScanBtn} onClick={() => setView("gallery")}>All Scans</button>
+              <button style={styles.newScanBtn} onClick={goUpload}>+ New Scan</button>
+            </div>
           </header>
 
-          {/* Main layout */}
           <div style={styles.layout}>
-            {/* Left: 3D Viewer */}
             <motion.div style={styles.leftPane} initial={{ opacity:0, scale:0.98 }} animate={{ opacity:1, scale:1 }} transition={{ duration:0.4 }}>
-              <div style={styles.viewerLabel}>
-                {hasSplat ? "3D Gaussian Splat" : "2D Room Map"}
-              </div>
-              {hasSplat
-                ? <SplatViewer splatUrl={splatUrl} />
-                : <RoomMap scanId={scanId} />
-              }
+              <div style={styles.viewerLabel}>{hasSplat ? "3D Gaussian Splat" : "2D Room Map"}</div>
+              {hasSplat ? <SplatViewer splatUrl={splatUrl} /> : <RoomMap scanId={scanId} />}
             </motion.div>
 
-            {/* Right: Chat + Diff */}
             <motion.div style={styles.rightPane} initial={{ opacity:0, x:16 }} animate={{ opacity:1, x:0 }} transition={{ duration:0.4, delay:0.1 }}>
               <div style={styles.tabs}>
                 {(["chat","diff"] as RightTab[]).map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => setRightTab(tab)}
-                    style={{ ...styles.tab, ...(rightTab===tab ? styles.tabActive : {}) }}
-                  >
+                  <button key={tab} onClick={() => setRightTab(tab)}
+                    style={{ ...styles.tab, ...(rightTab===tab ? styles.tabActive : {}) }}>
                     {tab === "chat" ? "Q&A" : "Change Detect"}
                   </button>
                 ))}
@@ -131,6 +165,7 @@ export default function App() {
           </div>
         </motion.div>
       )}
+
     </AnimatePresence>
   );
 }
@@ -145,7 +180,9 @@ const styles: Record<string, React.CSSProperties> = {
   scanBadge:    { display:"flex", alignItems:"center", gap:6, fontSize:11, color:"var(--text-2)", fontFamily:"monospace", padding:"4px 10px", background:"var(--surface-2)", border:"1px solid var(--border)", borderRadius:20 },
   scanDot:      { width:6, height:6, borderRadius:"50%", background:"var(--success)", flexShrink:0 },
   countBadge:   { fontSize:10, color:"var(--text-3)", marginLeft:4 },
-  newScanBtn:   { marginLeft:"auto", background:"transparent", border:"1px solid var(--border)", color:"var(--text-2)", borderRadius:"var(--radius)", padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:500 },
+  topbarActions:{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6 },
+  iconBtn:      { background:"var(--surface-2)", border:"1px solid var(--border)", color:"var(--text-2)", borderRadius:"var(--radius)", padding:"5px 10px", fontSize:14, cursor:"pointer", fontWeight:600, textDecoration:"none", display:"inline-flex", alignItems:"center", justifyContent:"center", lineHeight:1, minWidth:32 },
+  newScanBtn:   { background:"transparent", border:"1px solid var(--border)", color:"var(--text-2)", borderRadius:"var(--radius)", padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:500 },
   layout:       { flex:1, display:"grid", gridTemplateColumns:"1fr 380px", gap:12, padding:12, overflow:"hidden", minHeight:0 },
   leftPane:     { display:"flex", flexDirection:"column", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow:"hidden", position:"relative" },
   viewerLabel:  { position:"absolute", top:12, left:12, zIndex:10, fontSize:11, fontWeight:600, color:"var(--text-3)", background:"rgba(8,8,8,0.7)", backdropFilter:"blur(4px)", padding:"4px 10px", borderRadius:20, border:"1px solid var(--border)", pointerEvents:"none" },

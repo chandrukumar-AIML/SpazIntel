@@ -28,8 +28,12 @@ export function ChatPanel({ scanId }: Props) {
       const res = await api.query(scanId, q);
       setMessages(m => [...m, { role: "ai", text: res.answer }]);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Error";
-      setMessages(m => [...m, { role: "ai", text: `Error: ${msg}` }]);
+      const raw = e instanceof Error ? e.message : "Error";
+      const isKeyMissing = /api.?key|authentication|invalid.?key|401/i.test(raw);
+      const msg = isKeyMissing
+        ? "Q&A requires an Anthropic API key. Add ANTHROPIC_API_KEY=sk-... to your .env file and restart the backend."
+        : `Error: ${raw}`;
+      setMessages(m => [...m, { role: "ai", text: msg }]);
     } finally {
       setLoading(false);
     }
