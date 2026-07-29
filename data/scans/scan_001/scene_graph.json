@@ -1,0 +1,255 @@
+{
+  "scan_id": "scan_001",
+  "location_id": "room_test",
+  "created_at": "2026-07-26T06:07:03.334115+00:00",
+  "objects": [
+    {
+      "id": "obj_6fc8f3",
+      "label": "pillow",
+      "confidence": 0.912,
+      "bbox_sample": [
+        1223.3,
+        669.4,
+        1366.1,
+        774.9
+      ],
+      "seen_in_frames": 428,
+      "position": {
+        "x_norm": 0.392,
+        "y_norm": 0.675,
+        "z_m": null
+      }
+    },
+    {
+      "id": "obj_12e0dc",
+      "label": "lamp",
+      "confidence": 0.839,
+      "bbox_sample": [
+        994.6,
+        0.0,
+        1133.6,
+        387.4
+      ],
+      "seen_in_frames": 133,
+      "position": {
+        "x_norm": 0.411,
+        "y_norm": 0.301,
+        "z_m": null
+      }
+    },
+    {
+      "id": "obj_ed7e00",
+      "label": "chair",
+      "confidence": 0.845,
+      "bbox_sample": [
+        1174.8,
+        625.4,
+        1497.1,
+        958.0
+      ],
+      "seen_in_frames": 145,
+      "position": {
+        "x_norm": 0.511,
+        "y_norm": 0.76,
+        "z_m": null
+      }
+    },
+    {
+      "id": "obj_dad832",
+      "label": "desk",
+      "confidence": 0.801,
+      "bbox_sample": [
+        0.0,
+        851.7,
+        560.7,
+        1080.0
+      ],
+      "seen_in_frames": 113,
+      "position": {
+        "x_norm": 0.462,
+        "y_norm": 0.847,
+        "z_m": null
+      }
+    },
+    {
+      "id": "obj_09fd63",
+      "label": "picture frame",
+      "confidence": 0.848,
+      "bbox_sample": [
+        281.1,
+        340.1,
+        411.3,
+        521.9
+      ],
+      "seen_in_frames": 171,
+      "position": {
+        "x_norm": 0.426,
+        "y_norm": 0.368,
+        "z_m": null
+      }
+    },
+    {
+      "id": "obj_3f58bb",
+      "label": "sofa",
+      "confidence": 0.91,
+      "bbox_sample": [
+        132.1,
+        597.2,
+        867.5,
+        838.6
+      ],
+      "seen_in_frames": 90,
+      "position": {
+        "x_norm": 0.347,
+        "y_norm": 0.759,
+        "z_m": null
+      }
+    },
+    {
+      "id": "obj_038689",
+      "label": "plant",
+      "confidence": 0.481,
+      "bbox_sample": [
+        1794.9,
+        564.1,
+        1920.0,
+        712.9
+      ],
+      "seen_in_frames": 65,
+      "position": {
+        "x_norm": 0.449,
+        "y_norm": 0.562,
+        "z_m": null
+      }
+    },
+    {
+      "id": "obj_d06d09",
+      "label": "tv",
+      "confidence": 0.945,
+      "bbox_sample": [
+        935.7,
+        469.0,
+        1216.4,
+        634.8
+      ],
+      "seen_in_frames": 33,
+      "position": {
+        "x_norm": 0.756,
+        "y_norm": 0.494,
+        "z_m": null
+      }
+    },
+    {
+      "id": "obj_6b4c98",
+      "label": "couch",
+      "confidence": 0.86,
+      "bbox_sample": [
+        1249.2,
+        730.9,
+        1836.9,
+        1080.0
+      ],
+      "seen_in_frames": 18,
+      "position": {
+        "x_norm": 0.617,
+        "y_norm": 0.842,
+        "z_m": null
+      }
+    },
+    {
+      "id": "obj_d722e3",
+      "label": "refrigerator",
+      "confidence": 0.897,
+      "bbox_sample": [
+        1230.0,
+        345.8,
+        1535.8,
+        878.3
+      ],
+      "seen_in_frames": 28,
+      "position": {
+        "x_norm": 0.646,
+        "y_norm": 0.575,
+        "z_m": null
+      }
+    },
+    {
+      "id": "obj_5c3af8",
+      "label": "shelf",
+      "confidence": 0.704,
+      "bbox_sample": [
+        689.5,
+        656.7,
+        872.4,
+        835.0
+      ],
+      "seen_in_frames": 307,
+      "position": {
+        "x_norm": 0.493,
+        "y_norm": 0.64,
+        "z_m": null
+      }
+    },
+    {
+      "id": "obj_eb325b",
+      "label": "cabinet",
+      "confidence": 0.674,
+      "bbox_sample": [
+        1282.7,
+        757.2,
+        1803.8,
+        1080.0
+      ],
+      "seen_in_frames": 279,
+      "position": {
+        "x_norm": 0.505,
+        "y_norm": 0.64,
+        "z_m": null
+      }
+    },
+    {
+      "id": "obj_50c997",
+      "label": "table",
+      "confidence": 0.489,
+      "bbox_sample": [
+        0.0,
+        920.5,
+        451.4,
+        1078.0
+      ],
+      "seen_in_frames": 13,
+      "position": {
+        "x_norm": 0.187,
+        "y_norm": 0.935,
+        "z_m": null
+      }
+    },
+    {
+      "id": "obj_01659a",
+      "label": "bed",
+      "confidence": 0.928,
+      "bbox_sample": [
+        1.4,
+        563.8,
+        944.2,
+        1078.9
+      ],
+      "seen_in_frames": 45,
+      "position": {
+        "x_norm": 0.373,
+        "y_norm": 0.758,
+        "z_m": null
+      }
+    }
+  ],
+  "structure": {
+    "walls": 0,
+    "doors": [],
+    "windows": [
+      {
+        "id": "obj_8d2a04"
+      }
+    ]
+  },
+  "object_count": 14
+}

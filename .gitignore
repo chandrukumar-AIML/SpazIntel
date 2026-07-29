@@ -15,6 +15,7 @@ build/
 # Data (large files — don't commit)
 data/scans/*/frames/
 data/scans/*/splat/
+!data/scans/scan_001/splat/splat.ply
 data/scans/*/sparse/
 data/scans/*/detections/
 models/

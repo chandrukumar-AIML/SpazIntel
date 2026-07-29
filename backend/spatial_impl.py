@@ -19,7 +19,8 @@ from constants import (
 logger = logging.getLogger(__name__)
 
 DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
-SCANS_DIR = Path(os.getenv("SCANS_DIR", "data/scans"))
+_DEFAULT_SCANS = str(Path(__file__).parent.parent / "data" / "scans")
+SCANS_DIR = Path(os.getenv("SCANS_DIR", _DEFAULT_SCANS))
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 

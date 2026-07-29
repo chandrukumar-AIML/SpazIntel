@@ -1,4 +1,4 @@
-const BASE = "http://localhost:8000";
+const BASE = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8000";
 
 async function action<T>(act: string, payload: Record<string, unknown> = {}): Promise<T> {
   const res = await fetch(`${BASE}/api/spatial/action`, {

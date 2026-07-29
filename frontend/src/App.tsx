@@ -8,7 +8,7 @@ import { UploadPanel } from "./components/UploadPanel";
 import { ScanProgress } from "./components/ScanProgress";
 import { CameraCapture } from "./components/CameraCapture";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8000";
 type View = "upload" | "camera" | "scanning" | "explore";
 type RightTab = "chat" | "diff";
 
