@@ -12,7 +12,7 @@ from typing import Any
 
 from models import SpatialResponse
 from constants import (
-    ACTION_SCAN, ACTION_QUERY, ACTION_DIFF, ACTION_STATUS,
+    ACTION_SCAN, ACTION_QUERY, ACTION_DIFF, ACTION_STATUS, ACTION_SCENE_GRAPH,
     LLM_PRIMARY, LLM_OLLAMA_MODEL, PROMPT_SPATIAL_QA_VERSION,
 )
 
@@ -25,10 +25,11 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 async def dispatch(action: str, payload: dict[str, Any]) -> SpatialResponse:
     handlers = {
-        ACTION_SCAN: _scan,
-        ACTION_QUERY: _query,
-        ACTION_DIFF: _diff,
-        ACTION_STATUS: _status,
+        ACTION_SCAN:        _scan,
+        ACTION_QUERY:       _query,
+        ACTION_DIFF:        _diff,
+        ACTION_STATUS:      _status,
+        ACTION_SCENE_GRAPH: _scene_graph,
     }
     try:
         return await handlers[action](payload)
@@ -213,6 +214,17 @@ async def _diff(payload: dict) -> SpatialResponse:
     report = diff_graphs(graph_a, graph_b)
 
     return SpatialResponse(success=True, data=report)
+
+
+async def _scene_graph(payload: dict) -> SpatialResponse:
+    scan_id = payload.get("scan_id")
+    if not scan_id:
+        return SpatialResponse(success=False, error="scan_id required")
+    graph_path = SCANS_DIR / scan_id / "scene_graph.json"
+    if not graph_path.exists():
+        return SpatialResponse(success=False, error=f"No scene graph for scan_id={scan_id}")
+    graph = json.loads(graph_path.read_text())
+    return SpatialResponse(success=True, data=graph)
 
 
 async def _status(payload: dict) -> SpatialResponse:

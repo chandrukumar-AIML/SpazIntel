@@ -1,12 +1,13 @@
 # No magic strings. All action names and config keys live here.
 
 # API Actions
-ACTION_SCAN = "scan"
-ACTION_QUERY = "query"
-ACTION_DIFF = "diff"
-ACTION_STATUS = "status"
+ACTION_SCAN         = "scan"
+ACTION_QUERY        = "query"
+ACTION_DIFF         = "diff"
+ACTION_STATUS       = "status"
+ACTION_SCENE_GRAPH  = "scene_graph"
 
-VALID_ACTIONS = {ACTION_SCAN, ACTION_QUERY, ACTION_DIFF, ACTION_STATUS}
+VALID_ACTIONS = {ACTION_SCAN, ACTION_QUERY, ACTION_DIFF, ACTION_STATUS, ACTION_SCENE_GRAPH}
 
 # Scan statuses
 SCAN_STATUS_PENDING = "pending"

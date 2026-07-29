@@ -4,9 +4,10 @@ import { api } from "../lib/api";
 
 interface Props {
   onScanStarted: (scanId: string) => void;
+  onDemoMap: () => void;
 }
 
-export function UploadPanel({ onScanStarted }: Props) {
+export function UploadPanel({ onScanStarted, onDemoMap }: Props) {
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -123,7 +124,11 @@ export function UploadPanel({ onScanStarted }: Props) {
       <div style={styles.existingRow}>
         or &nbsp;
         <button style={styles.link} onClick={() => onScanStarted("scan_001")}>
-          load scan_001 (demo room)
+          load scan_001 (3D splat)
+        </button>
+        &nbsp;·&nbsp;
+        <button style={styles.link} onClick={onDemoMap}>
+          room map view
         </button>
       </div>
     </div>

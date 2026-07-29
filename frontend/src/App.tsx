@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { SplatViewer } from "./components/SplatViewer";
+import { RoomMap } from "./components/RoomMap";
 import { ChatPanel } from "./components/ChatPanel";
 import { DiffPanel } from "./components/DiffPanel";
 import { UploadPanel } from "./components/UploadPanel";
@@ -14,18 +15,24 @@ export default function App() {
   const [view, setView]       = useState<View>("upload");
   const [scanId, setScanId]   = useState("scan_001");
   const [objCount, setObjCount] = useState(0);
+  const [hasSplat, setHasSplat] = useState(true);   // scan_001 has splat by default
   const [rightTab, setRightTab] = useState<RightTab>("chat");
 
   function onScanStarted(id: string) {
     setScanId(id);
-    // If it's the demo scan, skip straight to explore
-    if (id === "scan_001") { setView("explore"); return; }
+    if (id === "scan_001") {
+      setHasSplat(true);
+      setView("explore");
+      return;
+    }
+    setHasSplat(false);
     setView("scanning");
   }
 
   function onComplete(id: string, count: number) {
     setScanId(id);
     setObjCount(count);
+    setHasSplat(false);   // new uploads don't have a splat yet
     setView("explore");
   }
 
@@ -40,7 +47,7 @@ export default function App() {
     <AnimatePresence mode="wait">
       {view === "upload" && (
         <motion.div key="upload" style={styles.page} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
-          <UploadPanel onScanStarted={onScanStarted} />
+          <UploadPanel onScanStarted={onScanStarted} onDemoMap={() => { setScanId("scan_001"); setHasSplat(false); setView("explore"); }} />
         </motion.div>
       )}
 
@@ -73,8 +80,13 @@ export default function App() {
           <div style={styles.layout}>
             {/* Left: 3D Viewer */}
             <motion.div style={styles.leftPane} initial={{ opacity:0, scale:0.98 }} animate={{ opacity:1, scale:1 }} transition={{ duration:0.4 }}>
-              <div style={styles.viewerLabel}>3D Gaussian Splat</div>
-              <SplatViewer splatUrl={splatUrl} />
+              <div style={styles.viewerLabel}>
+                {hasSplat ? "3D Gaussian Splat" : "2D Room Map"}
+              </div>
+              {hasSplat
+                ? <SplatViewer splatUrl={splatUrl} />
+                : <RoomMap scanId={scanId} />
+              }
             </motion.div>
 
             {/* Right: Chat + Diff */}

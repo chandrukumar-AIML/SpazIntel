@@ -34,6 +34,9 @@ export const api = {
 
   jobStatus: (scan_id: string): Promise<JobStatus> =>
     fetch(`${BASE}/api/spatial/job/${scan_id}`).then(r => r.json()),
+
+  sceneGraph: (scan_id: string) =>
+    action<{ objects: SceneObject[]; structure: unknown }>("scene_graph", { scan_id }),
 };
 
 export interface SceneObject {
