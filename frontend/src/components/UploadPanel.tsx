@@ -4,10 +4,11 @@ import { api } from "../lib/api";
 
 interface Props {
   onScanStarted: (scanId: string) => void;
+  onOpenCamera: () => void;
   onDemoMap: () => void;
 }
 
-export function UploadPanel({ onScanStarted, onDemoMap }: Props) {
+export function UploadPanel({ onScanStarted, onOpenCamera, onDemoMap }: Props) {
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -61,7 +62,15 @@ export function UploadPanel({ onScanStarted, onDemoMap }: Props) {
         transition={{ duration: 0.4 }}
       >
         <div style={styles.cardTitle}>Scan a Room</div>
-        <div style={styles.cardSub}>Upload a video walkthrough or 6+ photos taken in order around the room</div>
+        <div style={styles.cardSub}>Use your camera for guided capture, or upload a video / 6+ photos</div>
+
+        {/* Camera button — primary CTA */}
+        <button style={styles.cameraBtn} onClick={onOpenCamera}>
+          <span style={{ fontSize: 20 }}>📷</span>
+          Use Camera — Guided 6-shot capture
+        </button>
+
+        <div style={styles.divider}><span style={styles.dividerText}>or upload files</span></div>
 
         {/* Drop zone */}
         <div
@@ -116,7 +125,7 @@ export function UploadPanel({ onScanStarted, onDemoMap }: Props) {
           onClick={startScan}
           disabled={!valid || uploading}
         >
-          {uploading ? "Uploading…" : "Start Scan"}
+          {uploading ? "Uploading…" : "Upload & Scan"}
         </button>
       </motion.div>
 
@@ -160,7 +169,10 @@ const styles: Record<string, React.CSSProperties> = {
   dropHint:    { fontSize:12, color:"var(--text-3)" },
   tips:        { display:"flex", flexDirection:"column", gap:8, padding:"12px 14px", background:"var(--surface-2)", borderRadius:"var(--radius)" },
   error:       { fontSize:12, color:"var(--danger)", textAlign:"center" as const },
-  btn:         { background:"var(--accent)", color:"#fff", border:"none", borderRadius:"var(--radius)", padding:"11px 0", fontSize:14, fontWeight:700, cursor:"pointer", width:"100%", letterSpacing:"0.01em" },
+  cameraBtn:   { display:"flex", alignItems:"center", justifyContent:"center", gap:10, background:"var(--accent)", color:"#fff", border:"none", borderRadius:"var(--radius)", padding:"13px 0", fontSize:15, fontWeight:700, cursor:"pointer", width:"100%" },
+  divider:     { display:"flex", alignItems:"center", gap:0 },
+  dividerText: { fontSize:11, color:"var(--text-3)", whiteSpace:"nowrap" as const, width:"100%", textAlign:"center" as const },
+  btn:         { background:"var(--surface-2)", color:"var(--text-2)", border:"1px solid var(--border)", borderRadius:"var(--radius)", padding:"11px 0", fontSize:14, fontWeight:600, cursor:"pointer", width:"100%" },
   btnDisabled: { opacity:0.4, cursor:"not-allowed" },
   existingRow: { fontSize:12, color:"var(--text-3)" },
   link:        { background:"none", border:"none", color:"var(--accent)", fontSize:12, cursor:"pointer", padding:0, textDecoration:"underline" },
