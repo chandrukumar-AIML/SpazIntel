@@ -3,9 +3,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")   # must run before all other imports
 
+import asyncio
 import time
 import logging
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -112,3 +113,42 @@ async def job_status(scan_id: str):
             }
         return {"scan_id": scan_id, "status": "not_found", "step": "", "has_splat": False, "error": None}
     return {"scan_id": scan_id, **job}
+
+
+# ── Live WebSocket scan ────────────────────────────────────────────────────────
+@app.websocket("/ws/live/{session_id}")
+async def live_scan_ws(websocket: WebSocket, session_id: str):
+    """
+    Real-time room scan via WebSocket.
+    Client sends raw JPEG frames (binary); server returns JSON detections.
+    Protocol:
+      C → S: binary JPEG bytes
+      S → C: {"detections": [...], "count": N, "session_id": "..."}
+    """
+    await websocket.accept()
+    logger.info("live session=%s connected", session_id)
+
+    import sys
+    _engines = str(Path(__file__).parent.parent / "engines")
+    if _engines not in sys.path:
+        sys.path.insert(0, _engines)
+
+    from rce.live_detect import process_live_frame
+
+    try:
+        while True:
+            jpeg_bytes = await websocket.receive_bytes()
+            detections = await asyncio.to_thread(process_live_frame, jpeg_bytes)
+            await websocket.send_json({
+                "session_id": session_id,
+                "detections": detections,
+                "count":      len(detections),
+            })
+    except WebSocketDisconnect:
+        logger.info("live session=%s disconnected", session_id)
+    except Exception as e:
+        logger.error("live session=%s error: %s", session_id, e)
+        try:
+            await websocket.send_json({"error": str(e)})
+        except Exception:
+            pass

@@ -7,9 +7,10 @@ import { DiffPanel } from "./components/DiffPanel";
 import { UploadPanel } from "./components/UploadPanel";
 import { ScanProgress } from "./components/ScanProgress";
 import { CameraCapture } from "./components/CameraCapture";
+import { LiveCapture } from "./components/LiveCapture";
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8000";
-type View = "upload" | "camera" | "scanning" | "explore";
+type View = "upload" | "camera" | "live" | "scanning" | "explore";
 type RightTab = "chat" | "diff";
 
 export default function App() {
@@ -51,6 +52,7 @@ export default function App() {
           <UploadPanel
             onScanStarted={onScanStarted}
             onOpenCamera={() => setView("camera")}
+            onOpenLive={() => setView("live")}
             onDemoMap={() => { setScanId("scan_001"); setHasSplat(false); setView("explore"); }}
           />
         </motion.div>
@@ -62,6 +64,12 @@ export default function App() {
             onScanStarted={id => { setScanId(id); setHasSplat(false); setView("scanning"); }}
             onBack={() => setView("upload")}
           />
+        </motion.div>
+      )}
+
+      {view === "live" && (
+        <motion.div key="live" style={styles.page} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
+          <LiveCapture onBack={() => setView("upload")} />
         </motion.div>
       )}
 

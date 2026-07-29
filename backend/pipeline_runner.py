@@ -77,32 +77,24 @@ def _run(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool) -> None
         _set(scan_id, frames_count=len(frames))
         logger.info("scan_id=%s frames=%d", scan_id, len(frames))
 
-        # ── Step 2: depth estimation (Depth Anything v2) ───────────────────
-        depth_enriched_detections = None
+        # ── Step 2: object detection (runs exactly once) ───────────────────
+        detections_dir = scan_dir / "detections"
+        detections_dir.mkdir(parents=True, exist_ok=True)
+
+        _set(scan_id, status="detecting", step="Detecting objects…")
+        detections = detect_objects(str(frames_dir), str(detections_dir))
+        logger.info("scan_id=%s detections=%d", scan_id, len(detections))
+
+        # ── Step 3: depth enrichment (optional, in-place) ──────────────────
         if not _SKIP_DEPTH:
             _set(scan_id, status="depth", step="Estimating depth…")
             try:
                 from rce.depth import enrich_detections_with_depth, load_depth_model
-                # Run detection first, then enrich with depth
-                _set(scan_id, step="Detecting objects…")
-                detections_dir = scan_dir / "detections"
-                detections = detect_objects(str(frames_dir), str(detections_dir))
-
-                _set(scan_id, status="depth", step="Estimating depth…")
                 pipe = load_depth_model()
-                depth_enriched_detections = enrich_detections_with_depth(detections, str(frames_dir), pipe)
+                enrich_detections_with_depth(detections, str(frames_dir), pipe)
                 logger.info("scan_id=%s depth enrichment done", scan_id)
             except Exception as e:
                 logger.warning("scan_id=%s depth failed (%s) — continuing without depth", scan_id, e)
-                depth_enriched_detections = None
-
-        # ── Step 3: object detection (if not done with depth) ───────────────
-        _set(scan_id, status="detecting", step="Detecting objects…")
-        if depth_enriched_detections is None:
-            detections_dir = scan_dir / "detections"
-            detections = detect_objects(str(frames_dir), str(detections_dir))
-        else:
-            detections = depth_enriched_detections
 
         logger.info("scan_id=%s detections=%d", scan_id, len(detections))
 

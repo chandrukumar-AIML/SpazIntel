@@ -5,10 +5,11 @@ import { api } from "../lib/api";
 interface Props {
   onScanStarted: (scanId: string) => void;
   onOpenCamera: () => void;
+  onOpenLive: () => void;
   onDemoMap: () => void;
 }
 
-export function UploadPanel({ onScanStarted, onOpenCamera, onDemoMap }: Props) {
+export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onDemoMap }: Props) {
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -64,10 +65,16 @@ export function UploadPanel({ onScanStarted, onOpenCamera, onDemoMap }: Props) {
         <div style={styles.cardTitle}>Scan a Room</div>
         <div style={styles.cardSub}>Use your camera for guided capture, or upload a video / 6+ photos</div>
 
-        {/* Camera button — primary CTA */}
+        {/* Live Scan — primary CTA */}
+        <button style={styles.liveBtn} onClick={onOpenLive}>
+          <span style={{ fontSize: 20 }}>🎥</span>
+          Live Room Scan — Real-time 3D map
+        </button>
+
+        {/* Camera batch capture */}
         <button style={styles.cameraBtn} onClick={onOpenCamera}>
-          <span style={{ fontSize: 20 }}>📷</span>
-          Use Camera — Guided 6-shot capture
+          <span style={{ fontSize: 16 }}>📷</span>
+          Guided 6-shot capture
         </button>
 
         <div style={styles.divider}><span style={styles.dividerText}>or upload files</span></div>
@@ -169,7 +176,8 @@ const styles: Record<string, React.CSSProperties> = {
   dropHint:    { fontSize:12, color:"var(--text-3)" },
   tips:        { display:"flex", flexDirection:"column", gap:8, padding:"12px 14px", background:"var(--surface-2)", borderRadius:"var(--radius)" },
   error:       { fontSize:12, color:"var(--danger)", textAlign:"center" as const },
-  cameraBtn:   { display:"flex", alignItems:"center", justifyContent:"center", gap:10, background:"var(--accent)", color:"#fff", border:"none", borderRadius:"var(--radius)", padding:"13px 0", fontSize:15, fontWeight:700, cursor:"pointer", width:"100%" },
+  liveBtn:     { display:"flex", alignItems:"center", justifyContent:"center", gap:10, background:"linear-gradient(135deg,#6366f1,#8b5cf6)", color:"#fff", border:"none", borderRadius:"var(--radius)", padding:"13px 0", fontSize:15, fontWeight:700, cursor:"pointer", width:"100%" },
+  cameraBtn:   { display:"flex", alignItems:"center", justifyContent:"center", gap:10, background:"var(--surface-2)", color:"var(--text-2)", border:"1px solid var(--border)", borderRadius:"var(--radius)", padding:"10px 0", fontSize:13, fontWeight:600, cursor:"pointer", width:"100%" },
   divider:     { display:"flex", alignItems:"center", gap:0 },
   dividerText: { fontSize:11, color:"var(--text-3)", whiteSpace:"nowrap" as const, width:"100%", textAlign:"center" as const },
   btn:         { background:"var(--surface-2)", color:"var(--text-2)", border:"1px solid var(--border)", borderRadius:"var(--radius)", padding:"11px 0", fontSize:14, fontWeight:600, cursor:"pointer", width:"100%" },

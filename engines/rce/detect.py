@@ -16,6 +16,7 @@ DEFAULT_PROMPTS = [
 ]
 
 _model = None
+_model_prompts: list[str] | None = None
 
 
 def detect_objects(
@@ -32,7 +33,12 @@ def detect_objects(
         prompts = DEFAULT_PROMPTS
 
     frames_dir = Path(frames_dir)
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    try:
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # WinError 6714: Windows NTFS transaction handle issue after YOLO init
+        import os
+        os.makedirs(str(output_dir), exist_ok=True)
 
     frame_paths = sorted(frames_dir.glob("*.jpg"))
     if not frame_paths:
@@ -55,11 +61,15 @@ def detect_objects(
 
 
 def _load_model(prompts: list[str]):
+    global _model, _model_prompts
+    if _model is not None and _model_prompts == prompts:
+        return _model   # reuse — avoids WinError 6714 on second load
     from ultralytics import YOLOWorld
-    model = YOLOWorld("yolov8s-worldv2.pt")  # auto-downloads ~100MB on first run
-    model.set_classes(prompts)
+    _model = YOLOWorld("yolov8s-worldv2.pt")
+    _model.set_classes(prompts)
+    _model_prompts = prompts
     logger.info("YOLO-World loaded, classes: %s", prompts[:5])
-    return model
+    return _model
 
 
 def _detect_frame(frame_path: Path, model, threshold: float) -> list[dict]:
