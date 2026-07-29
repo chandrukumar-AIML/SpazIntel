@@ -18,6 +18,9 @@ data/scans/*/splat/
 data/scans/*/sparse/
 data/scans/*/detections/
 models/
+weights/
+*.pt
+data/scans/*/frames_for_colab.zip
 
 # Node
 node_modules/

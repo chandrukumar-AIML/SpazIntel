@@ -1,7 +1,9 @@
 import os
 import logging
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 from models import SpatialRequest, SpatialResponse
@@ -21,6 +23,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+_SPLAT_DIR = Path(__file__).parent.parent / "data" / "scans" / "scan_001" / "splat"
+if _SPLAT_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(_SPLAT_DIR)), name="static")
 
 
 @app.get("/health")
