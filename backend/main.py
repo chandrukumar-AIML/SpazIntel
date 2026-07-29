@@ -1,18 +1,18 @@
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent.parent / ".env")   # must run before all other imports
+
 import time
 import logging
-from pathlib import Path
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from dotenv import load_dotenv
 
 from models import SpatialRequest, SpatialResponse
 from constants import VALID_ACTIONS
 import spatial_impl
 import pipeline_runner
-
-load_dotenv()
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -99,13 +99,16 @@ async def job_status(scan_id: str):
         if graph_path.exists():
             import json
             graph = json.loads(graph_path.read_text())
+            splat_dir = SCANS_DIR / scan_id / "splat"
+            has_splat = splat_dir.exists() and any(splat_dir.glob("*.ply"))
             return {
-                "scan_id": scan_id,
-                "status": "complete",
-                "step": "Complete",
+                "scan_id":      scan_id,
+                "status":       "complete",
+                "step":         "Complete",
                 "objects_found": len(graph.get("objects", [])),
                 "frames_count": 0,
-                "error": None,
+                "has_splat":    has_splat,
+                "error":        None,
             }
-        return {"scan_id": scan_id, "status": "not_found", "step": "", "error": None}
+        return {"scan_id": scan_id, "status": "not_found", "step": "", "has_splat": False, "error": None}
     return {"scan_id": scan_id, **job}
