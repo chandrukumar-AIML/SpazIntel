@@ -20,7 +20,6 @@ PROMPT_SPATIAL_QA_VERSION = "v1.0"
 PROMPT_CHANGE_DETECT_VERSION = "v1.0"
 
 # LLM fallback chain
-# Chain: Claude (cloud) → Ollama (local) → error
-LLM_PRIMARY        = "claude-sonnet-5-20251101"   # needs ANTHROPIC_API_KEY
-LLM_OLLAMA_MODEL   = "llama3.2:latest"             # local Ollama, always available
-LLM_OLLAMA_HOST    = "http://localhost:11434"
+# Chain: Claude (cloud) → Groq free tier → error
+LLM_PRIMARY        = "claude-sonnet-5-20251101"      # needs ANTHROPIC_API_KEY
+LLM_GROQ_MODEL     = "llama-3.1-8b-instant"          # Groq free tier, needs GROQ_API_KEY

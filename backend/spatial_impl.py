@@ -13,7 +13,7 @@ from typing import Any
 from models import SpatialResponse
 from constants import (
     ACTION_SCAN, ACTION_QUERY, ACTION_DIFF, ACTION_STATUS, ACTION_SCENE_GRAPH,
-    LLM_PRIMARY, LLM_OLLAMA_MODEL, PROMPT_SPATIAL_QA_VERSION,
+    LLM_PRIMARY, LLM_GROQ_MODEL, PROMPT_SPATIAL_QA_VERSION,
 )
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
 SCANS_DIR = Path(os.getenv("SCANS_DIR", "data/scans"))
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 
 async def dispatch(action: str, payload: dict[str, Any]) -> SpatialResponse:
@@ -130,7 +131,8 @@ async def _llm_query(question: str, scene_graph: dict) -> str:
     """
     LLM fallback chain:
       1. Claude via Anthropic API  (if ANTHROPIC_API_KEY is set)
-      2. Ollama llama3.2 local     (always available as fallback)
+      2. Groq free tier            (if GROQ_API_KEY is set)
+      3. Error — at least one key required
     """
     import asyncio
     system_prompt = _load_prompt("spatial_qa_v1.txt")
@@ -141,10 +143,16 @@ async def _llm_query(question: str, scene_graph: dict) -> str:
         try:
             return await asyncio.to_thread(_call_claude, system_prompt, user_msg)
         except Exception as e:
-            logger.warning("Claude failed (%s) — falling back to Ollama", e)
+            logger.warning("Claude failed (%s) — falling back to Groq", e)
 
-    # Ollama fallback
-    return await asyncio.to_thread(_call_ollama, system_prompt, user_msg)
+    if GROQ_API_KEY and GROQ_API_KEY != "your_key_here":
+        try:
+            return await asyncio.to_thread(_call_groq, system_prompt, user_msg)
+        except Exception as e:
+            logger.warning("Groq failed (%s)", e)
+            raise RuntimeError(f"All LLM providers failed. Last error: {e}") from e
+
+    raise RuntimeError("No LLM available. Set ANTHROPIC_API_KEY or GROQ_API_KEY in .env.")
 
 
 def _call_claude(system_prompt: str, user_msg: str) -> str:
@@ -160,17 +168,19 @@ def _call_claude(system_prompt: str, user_msg: str) -> str:
     return msg.content[0].text
 
 
-def _call_ollama(system_prompt: str, user_msg: str) -> str:
-    import ollama
-    resp = ollama.chat(
-        model=LLM_OLLAMA_MODEL,
+def _call_groq(system_prompt: str, user_msg: str) -> str:
+    from groq import Groq
+    client = Groq(api_key=GROQ_API_KEY)
+    resp = client.chat.completions.create(
+        model=LLM_GROQ_MODEL,
+        max_tokens=512,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_msg},
         ],
     )
-    logger.info("llm=ollama model=%s", LLM_OLLAMA_MODEL)
-    return resp.message.content
+    logger.info("llm=groq model=%s", LLM_GROQ_MODEL)
+    return resp.choices[0].message.content
 
 
 def _load_prompt(filename: str) -> str:
