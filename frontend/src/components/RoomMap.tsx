@@ -1,8 +1,15 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { api } from "../lib/api";
 import type { SceneObject } from "../lib/api";
 
 interface Props { scanId: string }
+
+interface SceneGraph {
+  objects: SceneObject[];
+  structure: unknown;
+  distances?: { from: string; to: string; distance_m: number }[];
+  room_size?: { width_m: number; depth_m: number };
+}
 
 const COLORS: Record<string, string> = {
   chair: "#6366f1", sofa: "#6366f1", couch: "#6366f1", bench: "#6366f1",
@@ -20,33 +27,35 @@ const MAX_ZOOM = 6;
 
 export function RoomMap({ scanId }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [objects, setObjects]   = useState<SceneObject[]>([]);
+  const [graph, setGraph]       = useState<SceneGraph | null>(null);
   const [hovered, setHovered]   = useState<SceneObject | null>(null);
   const [status, setStatus]     = useState<"loading" | "ok" | "error">("loading");
 
-  // Pan/zoom stored in refs so draw() can always read latest without stale closure
+  // Measure mode: click two objects → show distance
+  const [measureA, setMeasureA] = useState<SceneObject | null>(null);
+  const [measureB, setMeasureB] = useState<SceneObject | null>(null);
+  const [measured, setMeasured] = useState<{ dist: number; fromLabel: string; toLabel: string } | null>(null);
+
   const pan  = useRef({ x: 0, y: 0 });
   const zoom = useRef(1);
-
-  // Drag state
-  const dragging   = useRef(false);
-  const dragStart  = useRef({ x: 0, y: 0 });
-  const panAtDrag  = useRef({ x: 0, y: 0 });
-
-  // Touch pinch state
+  const dragging      = useRef(false);
+  const dragStart     = useRef({ x: 0, y: 0 });
+  const panAtDrag     = useRef({ x: 0, y: 0 });
   const lastPinchDist = useRef<number | null>(null);
+
+  const objects = graph?.objects ?? [];
+  const distances = graph?.distances ?? [];
+  const roomSize  = graph?.room_size;
 
   useEffect(() => {
     setStatus("loading");
+    setMeasureA(null); setMeasureB(null); setMeasured(null);
     api.sceneGraph(scanId)
-      .then(data => { setObjects(data.objects ?? []); setStatus("ok"); })
+      .then(data => { setGraph(data as unknown as SceneGraph); setStatus("ok"); })
       .catch(() => setStatus("error"));
   }, [scanId]);
 
-  // Redraw whenever objects or hovered changes
-  useEffect(() => { draw(); }, [objects, hovered]);
-
-  function draw() {
+  const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -56,8 +65,6 @@ export function RoomMap({ scanId }: Props) {
     const { x: px, y: py } = pan.current;
 
     ctx.clearRect(0, 0, W, H);
-
-    // Background
     ctx.fillStyle = "#0c0c0c";
     ctx.fillRect(0, 0, W, H);
 
@@ -65,11 +72,16 @@ export function RoomMap({ scanId }: Props) {
     ctx.translate(px, py);
     ctx.scale(z, z);
 
-    // Grid
+    // Metric grid — estimate 1m grid spacing in canvas pixels
+    const gridPx = roomSize ? (W - PAD * 2) / roomSize.width_m : 60;
     ctx.strokeStyle = "rgba(255,255,255,0.04)";
     ctx.lineWidth = 1 / z;
-    for (let x = 0; x <= W; x += W / 8) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 0; y <= H; y += H / 8) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    for (let gx = 0; gx <= W; gx += gridPx) {
+      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke();
+    }
+    for (let gy = 0; gy <= H; gy += gridPx) {
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+    }
 
     // Room outline
     ctx.strokeStyle = "rgba(255,255,255,0.12)";
@@ -82,26 +94,55 @@ export function RoomMap({ scanId }: Props) {
     ctx.textAlign = "center";
     ctx.fillText("N", W / 2, 14 / z);
 
+    // Scale bar bottom-left (1m reference)
+    if (gridPx > 10) {
+      const barX = PAD, barY = H - 14 / z;
+      ctx.strokeStyle = "rgba(255,255,255,0.4)";
+      ctx.lineWidth = 2 / z;
+      ctx.beginPath(); ctx.moveTo(barX, barY); ctx.lineTo(barX + gridPx, barY); ctx.stroke();
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.font = `${9 / z}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.fillText("1m", barX + gridPx / 2, barY - 3 / z);
+    }
+
+    // Measure line between measureA and measureB
+    if (measureA && measureB) {
+      const getXY = (o: SceneObject) => ({
+        x: PAD + o.position.x_norm * (W - PAD * 2),
+        y: PAD + o.position.y_norm * (H - PAD * 2),
+      });
+      const pa = getXY(measureA);
+      const pb = getXY(measureB);
+      ctx.setLineDash([6 / z, 4 / z]);
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth = 2 / z;
+      ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     // Objects
     objects.forEach(obj => {
       const ox = PAD + obj.position.x_norm * (W - PAD * 2);
       const oy = PAD + obj.position.y_norm * (H - PAD * 2);
       const color = COLORS[obj.label] ?? FALLBACK;
       const isHov = hovered?.id === obj.id;
-      const r = (isHov ? 13 : 9) / z;
+      const isMeasA = measureA?.id === obj.id;
+      const isMeasB = measureB?.id === obj.id;
+      const r = (isHov || isMeasA || isMeasB ? 13 : 9) / z;
 
-      ctx.shadowColor = color;
-      ctx.shadowBlur = (isHov ? 18 : 6) / z;
+      ctx.shadowColor = isMeasA || isMeasB ? "#fbbf24" : color;
+      ctx.shadowBlur = (isHov || isMeasA || isMeasB ? 18 : 6) / z;
 
       ctx.beginPath();
       ctx.arc(ox, oy, r, 0, Math.PI * 2);
-      ctx.fillStyle = color + (isHov ? "ff" : "cc");
+      ctx.fillStyle = isMeasA || isMeasB ? "#fbbf24" : color + (isHov ? "ff" : "cc");
       ctx.fill();
       ctx.shadowBlur = 0;
 
       ctx.beginPath();
       ctx.arc(ox, oy, r + 3 / z, 0, Math.PI * 2);
-      ctx.strokeStyle = color + "33";
+      ctx.strokeStyle = (isMeasA || isMeasB ? "#fbbf24" : color) + "33";
       ctx.lineWidth = 2 / z;
       ctx.stroke();
 
@@ -110,7 +151,6 @@ export function RoomMap({ scanId }: Props) {
       ctx.font = `${isHov ? "bold " : ""}${fs}px system-ui`;
       const tw = ctx.measureText(lbl).width;
       const ly = oy + r + 3 / z;
-
       ctx.fillStyle = "rgba(0,0,0,0.75)";
       ctx.fillRect(ox - tw / 2 - 3 / z, ly, tw + 6 / z, 13 / z);
       ctx.fillStyle = isHov ? "#fff" : "rgba(255,255,255,0.75)";
@@ -119,19 +159,18 @@ export function RoomMap({ scanId }: Props) {
     });
 
     ctx.restore();
-  }
+  }, [objects, hovered, measureA, measureB, roomSize]);
 
-  // ── Coordinate helpers ────────────────────────────────────────────────────
+  useEffect(() => { draw(); }, [draw]);
+
+  // ── coordinate helpers ────────────────────────────────────────────────────
 
   function clientToWorld(e: { clientX: number; clientY: number }) {
     const canvas = canvasRef.current!;
     const rect   = canvas.getBoundingClientRect();
     const cx = (e.clientX - rect.left) * (canvas.width  / rect.width);
     const cy = (e.clientY - rect.top)  * (canvas.height / rect.height);
-    return {
-      x: (cx - pan.current.x) / zoom.current,
-      y: (cy - pan.current.y) / zoom.current,
-    };
+    return { x: (cx - pan.current.x) / zoom.current, y: (cy - pan.current.y) / zoom.current };
   }
 
   function findHit(wx: number, wy: number): SceneObject | null {
@@ -146,7 +185,29 @@ export function RoomMap({ scanId }: Props) {
     return null;
   }
 
-  // ── Mouse events ─────────────────────────────────────────────────────────
+  // ── measure distance lookup ────────────────────────────────────────────────
+
+  function lookupDistance(a: SceneObject, b: SceneObject) {
+    const pair = distances.find(
+      d => (d.from === a.label && d.to === b.label) ||
+           (d.from === b.label && d.to === a.label)
+    );
+    return pair ? pair.distance_m : null;
+  }
+
+  function handleMeasureClick(obj: SceneObject) {
+    if (!measureA) {
+      setMeasureA(obj); setMeasureB(null); setMeasured(null);
+    } else if (measureA.id === obj.id) {
+      setMeasureA(null); setMeasured(null);
+    } else {
+      setMeasureB(obj);
+      const d = lookupDistance(measureA, obj);
+      setMeasured(d !== null ? { dist: d, fromLabel: measureA.label, toLabel: obj.label } : null);
+    }
+  }
+
+  // ── mouse events ──────────────────────────────────────────────────────────
 
   function onMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
     dragging.current  = true;
@@ -160,8 +221,7 @@ export function RoomMap({ scanId }: Props) {
         x: panAtDrag.current.x + (e.clientX - dragStart.current.x),
         y: panAtDrag.current.y + (e.clientY - dragStart.current.y),
       };
-      draw();
-      return;
+      draw(); return;
     }
     if (!objects.length) return;
     const { x: wx, y: wy } = clientToWorld(e);
@@ -172,9 +232,10 @@ export function RoomMap({ scanId }: Props) {
     const moved = Math.hypot(e.clientX - dragStart.current.x, e.clientY - dragStart.current.y);
     dragging.current = false;
     if (moved < 4) {
-      // treat as click — select hovered
       const { x: wx, y: wy } = clientToWorld(e);
-      setHovered(findHit(wx, wy));
+      const hit = findHit(wx, wy);
+      if (hit) handleMeasureClick(hit);
+      else { setMeasureA(null); setMeasureB(null); setMeasured(null); }
     }
   }
 
@@ -184,7 +245,6 @@ export function RoomMap({ scanId }: Props) {
     const rect   = canvas.getBoundingClientRect();
     const cx = (e.clientX - rect.left) * (canvas.width  / rect.width);
     const cy = (e.clientY - rect.top)  * (canvas.height / rect.height);
-
     const delta  = e.deltaY < 0 ? 1.12 : 0.9;
     const newZ   = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom.current * delta));
     const ratio  = newZ / zoom.current;
@@ -193,12 +253,10 @@ export function RoomMap({ scanId }: Props) {
     draw();
   }
 
-  // ── Touch events (pinch + drag) ────────────────────────────────────────
+  // ── touch events ──────────────────────────────────────────────────────────
 
   function pinchDist(t: React.TouchList) {
-    const dx = t[0].clientX - t[1].clientX;
-    const dy = t[0].clientY - t[1].clientY;
-    return Math.hypot(dx, dy);
+    return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
   }
 
   function onTouchStart(e: React.TouchEvent<HTMLCanvasElement>) {
@@ -207,7 +265,7 @@ export function RoomMap({ scanId }: Props) {
       dragStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       panAtDrag.current = { ...pan.current };
     } else if (e.touches.length === 2) {
-      dragging.current     = false;
+      dragging.current = false;
       lastPinchDist.current = pinchDist(e.touches);
     }
   }
@@ -237,13 +295,17 @@ export function RoomMap({ scanId }: Props) {
   }
 
   function onTouchEnd() { dragging.current = false; lastPinchDist.current = null; }
-
   function resetView() { pan.current = { x: 0, y: 0 }; zoom.current = 1; draw(); }
+
+  const hovDepth = hovered?.position?.z_m != null ? `${hovered.position.z_m}m away` : null;
 
   return (
     <div style={styles.wrap}>
       <div style={styles.topRow}>
-        <div style={styles.label}>2D Room Map · {objects.length} objects</div>
+        <div style={styles.label}>
+          2D Room Map · {objects.length} objects
+          {roomSize && <span style={styles.roomSize}> · ~{roomSize.width_m}m × {roomSize.depth_m}m</span>}
+        </div>
         <div style={styles.controls}>
           <button style={styles.ctrl} onClick={() => { zoom.current = Math.min(MAX_ZOOM, zoom.current * 1.3); draw(); }}>+</button>
           <button style={styles.ctrl} onClick={() => { zoom.current = Math.max(MIN_ZOOM, zoom.current * 0.77); draw(); }}>−</button>
@@ -255,7 +317,7 @@ export function RoomMap({ scanId }: Props) {
         ref={canvasRef}
         width={480}
         height={460}
-        style={{ ...styles.canvas, cursor: dragging.current ? "grabbing" : "grab" }}
+        style={{ ...styles.canvas, cursor: dragging.current ? "grabbing" : "crosshair" }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
@@ -266,26 +328,47 @@ export function RoomMap({ scanId }: Props) {
         onTouchEnd={onTouchEnd}
       />
 
-      {hovered ? (
+      {/* Status bar */}
+      {measured ? (
+        <div style={styles.measured}>
+          <span style={styles.measureDot} />
+          <strong>{measured.fromLabel}</strong>
+          <span style={styles.measureArrow}>↔</span>
+          <strong>{measured.toLabel}</strong>
+          <span style={styles.measureDist}>{measured.dist}m</span>
+          <button style={styles.clearBtn} onClick={() => { setMeasureA(null); setMeasureB(null); setMeasured(null); }}>✕</button>
+        </div>
+      ) : measureA && !measureB ? (
+        <div style={styles.hint}>
+          <span style={{ color: "#fbbf24", fontWeight: 600 }}>{measureA.label}</span>
+          {" selected — click another object to measure distance"}
+        </div>
+      ) : hovered ? (
         <div style={styles.tooltip}>
           <span style={{ ...styles.tooltipDot, background: COLORS[hovered.label] ?? FALLBACK }} />
           <strong>{hovered.label}</strong>
+          {hovDepth && <span style={styles.depthBadge}>{hovDepth}</span>}
           <span style={styles.tooltipMeta}>
             x:{hovered.position.x_norm.toFixed(2)} y:{hovered.position.y_norm.toFixed(2)}
             {" · "}{Math.round(hovered.confidence * 100)}% conf
           </span>
         </div>
       ) : (
-        <div style={styles.hint}>Scroll to zoom · Drag to pan · Pinch on touch</div>
+        <div style={styles.hint}>Click object to measure · Scroll to zoom · Drag to pan</div>
       )}
 
+      {/* Legend */}
       <div style={styles.legend}>
         {objects.map(o => (
-          <div key={o.id} style={styles.chip}
+          <div key={o.id} style={{ ...styles.chip, ...(measureA?.id === o.id ? styles.chipActive : {}) }}
             onMouseEnter={() => setHovered(o)}
-            onMouseLeave={() => setHovered(null)}>
+            onMouseLeave={() => setHovered(null)}
+            onClick={() => handleMeasureClick(o)}>
             <span style={{ ...styles.dot, background: COLORS[o.label] ?? FALLBACK }} />
             <span style={{ color: hovered?.id === o.id ? "var(--text)" : "var(--text-3)" }}>{o.label}</span>
+            {o.position.z_m != null && (
+              <span style={styles.chipDepth}>{o.position.z_m}m</span>
+            )}
           </div>
         ))}
       </div>
@@ -301,15 +384,24 @@ const styles: Record<string, React.CSSProperties> = {
   wrap:        { width:"100%", height:"100%", display:"flex", flexDirection:"column", gap:4, padding:"8px 12px", overflow:"hidden", position:"relative" },
   topRow:      { display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 },
   label:       { fontSize:11, color:"var(--text-3)", fontWeight:600 },
+  roomSize:    { color:"var(--accent)", fontWeight:400 },
   controls:    { display:"flex", gap:4 },
   ctrl:        { background:"var(--surface-2)", border:"1px solid var(--border)", color:"var(--text-2)", borderRadius:4, width:24, height:24, fontSize:14, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 },
-  canvas:      { flex:1, width:"100%", height:"auto", borderRadius:"var(--radius)", minHeight:0, maxHeight:"calc(100% - 88px)", touchAction:"none" },
+  canvas:      { flex:1, width:"100%", height:"auto", borderRadius:"var(--radius)", minHeight:0, maxHeight:"calc(100% - 96px)", touchAction:"none" },
   tooltip:     { display:"flex", alignItems:"center", gap:6, fontSize:12, padding:"5px 10px", background:"var(--surface-2)", borderRadius:"var(--radius)", border:"1px solid var(--border)", flexShrink:0 },
   tooltipDot:  { width:8, height:8, borderRadius:"50%", flexShrink:0 },
+  depthBadge:  { fontSize:10, padding:"1px 6px", background:"rgba(99,102,241,0.15)", color:"var(--accent)", borderRadius:10, marginLeft:4, fontWeight:600 },
   tooltipMeta: { color:"var(--text-3)", marginLeft:"auto", fontSize:11 },
+  measured:    { display:"flex", alignItems:"center", gap:6, fontSize:12, padding:"5px 10px", background:"rgba(251,191,36,0.1)", borderRadius:"var(--radius)", border:"1px solid rgba(251,191,36,0.3)", flexShrink:0 },
+  measureDot:  { width:8, height:8, borderRadius:"50%", background:"#fbbf24", flexShrink:0 },
+  measureArrow:{ color:"var(--text-3)", fontSize:11 },
+  measureDist: { marginLeft:"auto", fontWeight:700, color:"#fbbf24", fontSize:13 },
+  clearBtn:    { background:"none", border:"none", color:"var(--text-3)", cursor:"pointer", fontSize:12, padding:"0 2px", marginLeft:4 },
   hint:        { fontSize:11, color:"var(--text-3)", textAlign:"center" as const, flexShrink:0 },
-  legend:      { display:"flex", flexWrap:"wrap", gap:"2px 8px", flexShrink:0 },
-  chip:        { display:"flex", alignItems:"center", gap:4, fontSize:10, cursor:"default", padding:"1px 4px", borderRadius:3 },
+  legend:      { display:"flex", flexWrap:"wrap", gap:"2px 8px", flexShrink:0, overflowY:"auto", maxHeight:48 },
+  chip:        { display:"flex", alignItems:"center", gap:4, fontSize:10, cursor:"pointer", padding:"1px 4px", borderRadius:3 },
+  chipActive:  { background:"rgba(251,191,36,0.15)", border:"1px solid rgba(251,191,36,0.3)" },
+  chipDepth:   { fontSize:9, color:"var(--accent)", marginLeft:2 },
   dot:         { width:6, height:6, borderRadius:"50%", flexShrink:0 },
   overlay:     { position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, color:"var(--text-3)", pointerEvents:"none" },
 };

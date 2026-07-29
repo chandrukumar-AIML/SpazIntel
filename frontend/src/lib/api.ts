@@ -36,7 +36,10 @@ export const api = {
     fetch(`${BASE}/api/spatial/job/${scan_id}`).then(r => r.json()),
 
   sceneGraph: (scan_id: string) =>
-    action<{ objects: SceneObject[]; structure: unknown }>("scene_graph", { scan_id }),
+    action<{ objects: SceneObject[]; structure: unknown; distances: { from: string; to: string; distance_m: number }[]; room_size?: { width_m: number; depth_m: number } }>("scene_graph", { scan_id }),
+
+  measure: (scan_id: string, label_a: string, label_b: string) =>
+    action<{ label_a: string; label_b: string; distance_m: number; note: string }>("measure", { scan_id, label_a, label_b }),
 };
 
 export interface SceneObject {

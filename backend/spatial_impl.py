@@ -12,7 +12,7 @@ from typing import Any
 
 from models import SpatialResponse
 from constants import (
-    ACTION_SCAN, ACTION_QUERY, ACTION_DIFF, ACTION_STATUS, ACTION_SCENE_GRAPH,
+    ACTION_SCAN, ACTION_QUERY, ACTION_DIFF, ACTION_STATUS, ACTION_SCENE_GRAPH, ACTION_MEASURE,
     LLM_PRIMARY, LLM_GROQ_MODEL, PROMPT_SPATIAL_QA_VERSION,
 )
 
@@ -32,6 +32,7 @@ async def dispatch(action: str, payload: dict[str, Any]) -> SpatialResponse:
         ACTION_DIFF:        _diff,
         ACTION_STATUS:      _status,
         ACTION_SCENE_GRAPH: _scene_graph,
+        ACTION_MEASURE:     _measure,
     }
     try:
         return await handlers[action](payload)
@@ -136,9 +137,33 @@ async def _llm_query(question: str, scene_graph: dict) -> str:
       3. Error — at least one key required
     """
     import asyncio
-    system_prompt = _load_prompt("spatial_qa_v1.txt")
-    graph_json = json.dumps(scene_graph, indent=2)
-    user_msg = f"Scene graph:\n{graph_json}\n\nQuestion: {question}"
+    system_prompt = _load_prompt("spatial_qa_v2.txt")
+
+    # Build compact context: objects table + distance table + room size
+    obj_rows = []
+    for o in scene_graph.get("objects", []):
+        pos = o.get("position", {})
+        z   = f"{pos['z_m']}m" if pos.get("z_m") is not None else "?"
+        wx  = o.get("world_x_m")
+        wy  = o.get("world_y_m")
+        coords = f"({wx},{wy})" if wx is not None else "?"
+        obj_rows.append(f"  {o['label']}: depth={z}, world_xy={coords}m, conf={o['confidence']}")
+
+    dist_rows = [
+        f"  {d['from']} ↔ {d['to']}: {d['distance_m']}m"
+        for d in scene_graph.get("distances", [])[:15]   # top 15 closest pairs
+    ]
+
+    room = scene_graph.get("room_size", {})
+    room_line = f"{room['width_m']}m wide × {room['depth_m']}m deep" if room else "unknown"
+
+    user_msg = (
+        f"Objects ({len(obj_rows)}):\n" + "\n".join(obj_rows) +
+        "\n\nDistances (closest first):\n" + ("\n".join(dist_rows) if dist_rows else "  (no depth data)") +
+        f"\n\nRoom size: {room_line}" +
+        f"\n\nStructure: {json.dumps(scene_graph.get('structure', {}))}" +
+        f"\n\nQuestion: {question}"
+    )
 
     if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_key_here":
         try:
@@ -236,6 +261,65 @@ async def _scene_graph(payload: dict) -> SpatialResponse:
         return SpatialResponse(success=False, error=f"No scene graph for scan_id={scan_id}")
     graph = json.loads(graph_path.read_text())
     return SpatialResponse(success=True, data=graph)
+
+
+async def _measure(payload: dict) -> SpatialResponse:
+    """
+    Measure distance between two objects by label.
+    Returns distance_m, and positions of both objects.
+    """
+    scan_id = payload.get("scan_id")
+    label_a = payload.get("label_a", "").lower().strip()
+    label_b = payload.get("label_b", "").lower().strip()
+    if not scan_id or not label_a or not label_b:
+        return SpatialResponse(success=False, error="scan_id, label_a, and label_b required")
+
+    graph_path = SCANS_DIR / scan_id / "scene_graph.json"
+    if not graph_path.exists():
+        return SpatialResponse(success=False, error=f"No scene graph for scan_id={scan_id}")
+
+    graph = json.loads(graph_path.read_text())
+    objects = graph.get("objects", [])
+
+    def find(lbl: str):
+        return next((o for o in objects if o["label"].lower() == lbl), None)
+
+    obj_a = find(label_a)
+    obj_b = find(label_b)
+
+    if not obj_a:
+        return SpatialResponse(success=False, error=f"'{label_a}' not found in this scan")
+    if not obj_b:
+        return SpatialResponse(success=False, error=f"'{label_b}' not found in this scan")
+
+    # Look up precomputed distance first
+    precomputed = next(
+        (d for d in graph.get("distances", [])
+         if set([d["from"], d["to"]]) == set([label_a, label_b])),
+        None,
+    )
+
+    if precomputed:
+        dist = precomputed["distance_m"]
+    else:
+        # Compute on the fly
+        import math
+        ax, ay = obj_a.get("world_x_m"), obj_a.get("world_y_m")
+        bx, by = obj_b.get("world_x_m"), obj_b.get("world_y_m")
+        az = obj_a["position"].get("z_m")
+        bz = obj_b["position"].get("z_m")
+        if None in (ax, ay, bx, by, az, bz):
+            return SpatialResponse(success=False, error="Depth data not available for one or both objects. Run scan with SKIP_DEPTH=false.")
+        dist = round(math.sqrt((ax - bx) ** 2 + (ay - by) ** 2 + (az - bz) ** 2), 2)
+
+    return SpatialResponse(success=True, data={
+        "label_a":    label_a,
+        "label_b":    label_b,
+        "distance_m": dist,
+        "object_a":   {"position": obj_a["position"], "world_x_m": obj_a.get("world_x_m"), "world_y_m": obj_a.get("world_y_m")},
+        "object_b":   {"position": obj_b["position"], "world_x_m": obj_b.get("world_x_m"), "world_y_m": obj_b.get("world_y_m")},
+        "note": "Distance is approximate (monocular depth estimation).",
+    })
 
 
 async def _status(payload: dict) -> SpatialResponse:
