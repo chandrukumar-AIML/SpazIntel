@@ -30,7 +30,7 @@ _SKIP_SPLAT   = os.getenv("SKIP_SPLAT",  "false").lower() == "true"
 _SPLAT_STEPS  = int(os.getenv("SPLAT_STEPS", "3000"))
 
 
-def start(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool) -> None:
+def start(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool, mode: str = "room") -> None:
     _jobs[scan_id] = {
         "status": "queued",
         "step": "Queued",
@@ -38,10 +38,11 @@ def start(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool) -> Non
         "objects_found": 0,
         "has_splat": False,
         "error": None,
+        "mode": mode,
     }
     t = threading.Thread(
         target=_run,
-        args=(scan_id, upload_dir, scan_dir, is_video),
+        args=(scan_id, upload_dir, scan_dir, is_video, mode),
         daemon=True,
     )
     t.start()
@@ -55,7 +56,10 @@ def _set(scan_id: str, **kwargs) -> None:
     _jobs[scan_id].update(kwargs)
 
 
-def _run(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool) -> None:
+def _run(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool, mode: str = "room") -> None:
+    # Object mode: faster settings — fewer gsplat steps, lower frame minimum for COLMAP
+    splat_steps   = 1500 if mode == "object" else _SPLAT_STEPS
+    colmap_min_frames = 4 if mode == "object" else 8
     try:
         from rce.capture import extract_frames
         from rce.detect import detect_objects
@@ -100,7 +104,7 @@ def _run(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool) -> None
 
         # ── Step 4: COLMAP structure from motion ─────────────────────────────
         splat_available = False
-        if not _SKIP_COLMAP and len(frames) >= 8:
+        if not _SKIP_COLMAP and len(frames) >= colmap_min_frames:
             _set(scan_id, status="colmap", step="Reconstructing 3D structure (COLMAP)…")
             try:
                 from rce.reconstruct import run_colmap
@@ -110,7 +114,7 @@ def _run(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool) -> None
 
                 # ── Step 5: gsplat training ───────────────────────────────
                 if not _SKIP_SPLAT and colmap_stats.get("points3D", 0) >= 100:
-                    _set(scan_id, status="splat", step=f"Training 3D Gaussian Splat ({_SPLAT_STEPS} steps)…")
+                    _set(scan_id, status="splat", step=f"Training 3D Gaussian Splat ({splat_steps} steps)…")
                     try:
                         from rce.reconstruct import train_splat
                         splat_dir = scan_dir / "splat"
@@ -119,7 +123,7 @@ def _run(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool) -> None
                             str(frames_dir),
                             sparse_dir,
                             str(splat_dir),
-                            max_steps=_SPLAT_STEPS,
+                            max_steps=splat_steps,
                         )
                         splat_available = True
                         logger.info("scan_id=%s splat done → %s", scan_id, ply_path)
@@ -131,7 +135,7 @@ def _run(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool) -> None
             except Exception as e:
                 logger.warning("scan_id=%s COLMAP failed (%s) — scan still usable via 2D map", scan_id, e)
         else:
-            reason = "skipped by env flag" if _SKIP_COLMAP else f"only {len(frames)} frames (need 8+)"
+            reason = "skipped by env flag" if _SKIP_COLMAP else f"only {len(frames)} frames (need {colmap_min_frames}+)"
             logger.info("scan_id=%s COLMAP skipped: %s", scan_id, reason)
 
         # ── Step 6: scene graph ───────────────────────────────────────────────

@@ -1,19 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { SplatViewer }   from "./components/SplatViewer";
-import { RoomMap }       from "./components/RoomMap";
-import { ChatPanel }     from "./components/ChatPanel";
-import { DiffPanel }     from "./components/DiffPanel";
-import { UploadPanel }   from "./components/UploadPanel";
-import { ScanProgress }  from "./components/ScanProgress";
-import { CameraCapture } from "./components/CameraCapture";
-import { LiveCapture }   from "./components/LiveCapture";
-import { ScansGallery }  from "./components/ScansGallery";
-import { api }           from "./lib/api";
+import { SplatViewer }    from "./components/SplatViewer";
+import { RoomMap }        from "./components/RoomMap";
+import { ChatPanel }      from "./components/ChatPanel";
+import { DiffPanel }      from "./components/DiffPanel";
+import { UploadPanel }    from "./components/UploadPanel";
+import { ScanProgress }   from "./components/ScanProgress";
+import { CameraCapture }  from "./components/CameraCapture";
+import { LiveCapture }    from "./components/LiveCapture";
+import { ScansGallery }   from "./components/ScansGallery";
+import { ObjectCapture }  from "./components/ObjectCapture";
+import { api }            from "./lib/api";
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8000";
-type View = "upload" | "gallery" | "camera" | "live" | "scanning" | "explore";
-type RightTab = "chat" | "diff";
+type View     = "upload" | "gallery" | "camera" | "live" | "object" | "scanning" | "explore";
+type RightTab  = "chat" | "diff";
+type ScanMode  = "room" | "object";
 
 export default function App() {
   const [view, setView]         = useState<View>("upload");
@@ -22,6 +23,7 @@ export default function App() {
   const [hasSplat, setHasSplat] = useState(true);
   const [leftMode, setLeftMode] = useState<"map"|"splat">("map");
   const [rightTab, setRightTab] = useState<RightTab>("chat");
+  const [scanMode, setScanMode] = useState<ScanMode>("room");
 
   // ── URL routing: ?scan=scan_id on load ────────────────────────────────────
   useEffect(() => {
@@ -41,8 +43,8 @@ export default function App() {
     window.history.pushState(null, "", `?scan=${id}`);
   }
 
-  function onScanStarted(id: string) {
-    setScanId(id);
+  function onScanStarted(id: string, mode: ScanMode = "room") {
+    setScanId(id); setScanMode(mode);
     if (id === "scan_001") { setHasSplat(true); pushScanUrl(id); setView("explore"); return; }
     setHasSplat(false);
     setView("scanning");
@@ -50,6 +52,8 @@ export default function App() {
 
   function onComplete(id: string, count: number, splat: boolean) {
     setScanId(id); setObjCount(count); setHasSplat(splat);
+    // Object scans: open straight into 3D viewer
+    setLeftMode(scanMode === "object" && splat ? "splat" : "map");
     pushScanUrl(id);
     setView("explore");
   }
@@ -57,6 +61,7 @@ export default function App() {
   function openScan(id: string, splat: boolean) {
     setScanId(id); setHasSplat(splat); setObjCount(0);
     setLeftMode("map");
+    setScanMode("room");
     pushScanUrl(id);
     setView("explore");
   }
@@ -68,7 +73,7 @@ export default function App() {
 
   function onError(msg: string) { alert(`Scan failed: ${msg}`); goUpload(); }
 
-  const splatUrl = `${BACKEND}/static/${scanId}/splat/splat.ply`;
+  const splatUrl = api.splatUrl(scanId);
 
   return (
     <AnimatePresence mode="wait">
@@ -80,6 +85,7 @@ export default function App() {
             onOpenCamera={() => setView("camera")}
             onOpenLive={() => setView("live")}
             onOpenGallery={() => setView("gallery")}
+            onOpenObject={() => setView("object")}
             onDemoMap={() => { setScanId("scan_001"); setHasSplat(false); pushScanUrl("scan_001"); setView("explore"); }}
           />
         </motion.div>
@@ -94,7 +100,16 @@ export default function App() {
       {view === "camera" && (
         <motion.div key="camera" style={styles.page} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
           <CameraCapture
-            onScanStarted={id => { setScanId(id); setHasSplat(false); setView("scanning"); }}
+            onScanStarted={id => { setScanId(id); setHasSplat(false); setScanMode("room"); setView("scanning"); }}
+            onBack={goUpload}
+          />
+        </motion.div>
+      )}
+
+      {view === "object" && (
+        <motion.div key="object" style={styles.page} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
+          <ObjectCapture
+            onScanStarted={id => onScanStarted(id, "object")}
             onBack={goUpload}
           />
         </motion.div>

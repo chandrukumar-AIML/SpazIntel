@@ -1,4 +1,5 @@
-const BASE = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8000";
+// Empty string → relative paths → Vite proxy forwards to localhost:8000
+const BASE = import.meta.env.VITE_BACKEND_URL ?? "";
 
 async function action<T>(act: string, payload: Record<string, unknown> = {}): Promise<T> {
   const res = await fetch(`${BASE}/api/spatial/action`, {
@@ -21,10 +22,10 @@ export const api = {
   status: (scan_id: string) =>
     action<{ has_scene_graph: boolean; has_splat: boolean; status: string }>("status", { scan_id }),
 
-  upload: async (files: FileList | File[]): Promise<{ scan_id: string; type: string }> => {
+  upload: async (files: FileList | File[], mode: "room" | "object" = "room"): Promise<{ scan_id: string; type: string }> => {
     const fd = new FormData();
     Array.from(files).forEach(f => fd.append("files", f));
-    const res = await fetch(`${BASE}/api/spatial/upload`, { method: "POST", body: fd });
+    const res = await fetch(`${BASE}/api/spatial/upload?mode=${mode}`, { method: "POST", body: fd });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       throw new Error(err.detail ?? "Upload failed");
@@ -45,6 +46,7 @@ export const api = {
     fetch(`${BASE}/api/scans`).then(r => r.json()),
 
   exportUrl: (scan_id: string) => `${BASE}/api/spatial/export/${scan_id}`,
+  splatUrl:  (scan_id: string) => `${BASE}/api/spatial/splat/${scan_id}`,
 };
 
 export interface SceneObject {

@@ -49,9 +49,12 @@ async def spatial_action(req: SpatialRequest):
 
 
 @app.post("/api/spatial/upload")
-async def upload_scan(files: list[UploadFile] = File(...)):
+async def upload_scan(files: list[UploadFile] = File(...), mode: str = "room"):
     if not files:
         raise HTTPException(status_code=400, detail="No files received")
+
+    if mode not in ("room", "object"):
+        mode = "room"
 
     # Detect upload type
     video_types = {"video/mp4", "video/quicktime", "video/x-msvideo", "video/avi", "video/mov"}
@@ -66,8 +69,10 @@ async def upload_scan(files: list[UploadFile] = File(...)):
         is_video = any(Path(f.filename or "").suffix.lower() in video_exts for f in files)
         is_images = not is_video
 
-    if is_images and len(files) < 6:
-        raise HTTPException(status_code=400, detail="Upload at least 6 images for a good scan")
+    # Object mode: 4+ images sufficient; room mode: 6+
+    min_images = 4 if mode == "object" else 6
+    if is_images and len(files) < min_images:
+        raise HTTPException(status_code=400, detail=f"Upload at least {min_images} images")
 
     scan_id = f"scan_{int(time.time())}"
     scan_dir = SCANS_DIR / scan_id
@@ -82,12 +87,13 @@ async def upload_scan(files: list[UploadFile] = File(...)):
         logger.info("saved upload: %s (%d bytes)", dest, dest.stat().st_size)
 
     # Kick off background pipeline
-    pipeline_runner.start(scan_id, upload_dir, scan_dir, is_video)
+    pipeline_runner.start(scan_id, upload_dir, scan_dir, is_video, mode=mode)
 
     return {
         "scan_id": scan_id,
         "files_received": len(files),
         "type": "video" if is_video else "images",
+        "mode": mode,
     }
 
 
@@ -153,6 +159,69 @@ async def list_scans():
             "created_at":   created_at,
         })
     return {"scans": results}
+
+
+# ── Serve .splat binary (PLY → antimatter15 format) ───────────────────────────
+def _convert_ply_to_splat(ply_path: Path) -> bytes:
+    """Convert 3DGS PLY → antimatter15 .splat (32 bytes/Gaussian). CPU-bound, run in thread."""
+    import numpy as np
+    data = ply_path.read_bytes()
+    end  = data.index(b"end_header\n") + len(b"end_header\n")
+    hdr  = data[:end].decode()
+    props = [l.split()[-1] for l in hdr.splitlines() if l.startswith("property float")]
+    N    = int([l for l in hdr.splitlines() if l.startswith("element vertex")][0].split()[-1])
+    body = np.frombuffer(data[end:], dtype=np.float32).reshape(N, len(props))
+    idx  = {p: i for i, p in enumerate(props)}
+
+    SH_C0 = 0.28209479177387814
+    def sigmoid(x): return 1.0 / (1.0 + np.exp(-np.clip(x, -80, 80)))
+
+    x  = body[:, idx["x"]].astype(np.float32)
+    y  = body[:, idx["y"]].astype(np.float32)
+    z  = body[:, idx["z"]].astype(np.float32)
+    s0 = np.exp(body[:, idx["scale_0"]]).astype(np.float32)
+    s1 = np.exp(body[:, idx["scale_1"]]).astype(np.float32)
+    s2 = np.exp(body[:, idx["scale_2"]]).astype(np.float32)
+    r_f  = np.clip(sigmoid(SH_C0 * body[:, idx["f_dc_0"]] + 0.5), 0, 1)
+    g_f  = np.clip(sigmoid(SH_C0 * body[:, idx["f_dc_1"]] + 0.5), 0, 1)
+    b_f  = np.clip(sigmoid(SH_C0 * body[:, idx["f_dc_2"]] + 0.5), 0, 1)
+    a_f  = np.clip(sigmoid(body[:, idx["opacity"]]), 0, 1)
+    q0 = body[:, idx["rot_0"]]; q1 = body[:, idx["rot_1"]]
+    q2 = body[:, idx["rot_2"]]; q3 = body[:, idx["rot_3"]]
+    qn = np.sqrt(q0**2 + q1**2 + q2**2 + q3**2) + 1e-8
+
+    floats = np.stack([x, y, z, s0, s1, s2], axis=1).astype(np.float32)
+    u8rgba = np.clip(np.stack([r_f, g_f, b_f, a_f], axis=1) * 255, 0, 255).astype(np.uint8)
+    u8rot  = np.clip(np.stack([q0/qn, q1/qn, q2/qn, q3/qn], axis=1) * 128 + 128, 0, 255).astype(np.uint8)
+
+    out_arr = np.zeros((N, 32), dtype=np.uint8)
+    out_arr[:, :24] = floats.view(np.uint8).reshape(N, 24)
+    out_arr[:, 24:28] = u8rgba
+    out_arr[:, 28:32] = u8rot
+    return out_arr.tobytes()
+
+
+@app.get("/api/spatial/splat/{scan_id}")
+async def serve_splat(scan_id: str):
+    """Convert splat.ply → .splat on demand, then redirect to the static file URL.
+    StaticFiles works reliably in all browsers; direct binary Response hits browser quirks."""
+    from fastapi.responses import RedirectResponse
+
+    scan_dir   = SCANS_DIR / scan_id
+    ply_path   = scan_dir / "splat" / "splat.ply"
+    if not ply_path.exists():
+        raise HTTPException(status_code=404, detail="No splat for this scan")
+
+    cache_path = scan_dir / "splat" / "splat.splat"
+    if not (cache_path.exists() and cache_path.stat().st_mtime >= ply_path.stat().st_mtime):
+        content = await asyncio.to_thread(_convert_ply_to_splat, ply_path)
+        try:
+            cache_path.write_bytes(content)
+        except Exception:
+            pass
+
+    # Redirect to the static file server — avoids browser quirks with large binary Responses
+    return RedirectResponse(url=f"/static/{scan_id}/splat/splat.splat", status_code=302)
 
 
 # ── Export scan as zip ─────────────────────────────────────────────────────────

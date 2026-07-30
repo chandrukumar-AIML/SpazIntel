@@ -7,10 +7,11 @@ interface Props {
   onOpenCamera: () => void;
   onOpenLive: () => void;
   onOpenGallery: () => void;
+  onOpenObject: () => void;
   onDemoMap: () => void;
 }
 
-export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGallery, onDemoMap }: Props) {
+export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGallery, onOpenObject, onDemoMap }: Props) {
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -75,10 +76,16 @@ export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGal
           Live Room Scan — Real-time 3D map
         </button>
 
+        {/* Object replica */}
+        <button style={styles.objectBtn} onClick={onOpenObject}>
+          <span style={{ fontSize: 16 }}>📦</span>
+          Scan an Object — 6-photo 3D replica
+        </button>
+
         {/* Camera batch capture */}
         <button style={styles.cameraBtn} onClick={onOpenCamera}>
           <span style={{ fontSize: 16 }}>📷</span>
-          Guided 6-shot capture
+          Guided 6-shot room capture
         </button>
 
         <div style={styles.divider}><span style={styles.dividerText}>or upload files</span></div>
@@ -186,6 +193,7 @@ const styles: Record<string, React.CSSProperties> = {
   tips:        { display:"flex", flexDirection:"column", gap:8, padding:"12px 14px", background:"var(--surface-2)", borderRadius:"var(--radius)" },
   error:       { fontSize:12, color:"var(--danger)", textAlign:"center" as const },
   liveBtn:     { display:"flex", alignItems:"center", justifyContent:"center", gap:10, background:"linear-gradient(135deg,#6366f1,#8b5cf6)", color:"#fff", border:"none", borderRadius:"var(--radius)", padding:"13px 0", fontSize:15, fontWeight:700, cursor:"pointer", width:"100%" },
+  objectBtn:   { display:"flex", alignItems:"center", justifyContent:"center", gap:10, background:"rgba(99,102,241,0.1)", color:"#a5b4fc", border:"1px solid rgba(99,102,241,0.3)", borderRadius:"var(--radius)", padding:"10px 0", fontSize:13, fontWeight:600, cursor:"pointer", width:"100%" },
   cameraBtn:   { display:"flex", alignItems:"center", justifyContent:"center", gap:10, background:"var(--surface-2)", color:"var(--text-2)", border:"1px solid var(--border)", borderRadius:"var(--radius)", padding:"10px 0", fontSize:13, fontWeight:600, cursor:"pointer", width:"100%" },
   divider:     { display:"flex", alignItems:"center", gap:0 },
   dividerText: { fontSize:11, color:"var(--text-3)", whiteSpace:"nowrap" as const, width:"100%", textAlign:"center" as const },

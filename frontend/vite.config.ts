@@ -7,5 +7,9 @@ export default defineConfig({
   server: {
     host: true,   // 0.0.0.0 — accessible from phone on same WiFi
     port: 5173,
+    proxy: {
+      "/api": { target: "http://localhost:8000", changeOrigin: true },
+      "/static": { target: "http://localhost:8000", changeOrigin: true },
+    },
   },
 })

@@ -207,13 +207,20 @@ def _train_gaussians(xyz_init, rgb_init, images_list, cameras_list, splat_dir, d
         if step % log_every == 0:
             logger.info("gsplat step %d/%d loss=%.4f", step, max_steps, loss.item())
 
-    # Save as PLY
+    # Save as PLY — standard 3DGS format:
+    #   scale: log-scale (raw param, NOT exp'd)
+    #   opacity: logit (raw param, NOT sigmoid'd)
+    #   colors: SH DC coefficients = (RGB - 0.5) / SH_C0
+    SH_C0 = 0.28209479177387814
+    quats_norm = quats / (quats.norm(dim=-1, keepdim=True) + 1e-8)
+    f_dc = (torch.sigmoid(colors) - 0.5) / SH_C0
+
     ply_path = splat_dir / "splat.ply"
     _save_ply(means.detach().cpu().numpy(),
-              torch.exp(scales).detach().cpu().numpy(),
-              quats.detach().cpu().numpy(),
-              torch.sigmoid(opacities).detach().cpu().squeeze(-1).numpy(),
-              torch.sigmoid(colors).detach().cpu().numpy(),
+              scales.detach().cpu().numpy(),            # log scale
+              quats_norm.detach().cpu().numpy(),        # normalized wxyz
+              opacities.detach().cpu().squeeze(-1).numpy(),  # logit
+              f_dc.detach().cpu().numpy(),              # SH DC
               ply_path)
     return ply_path
 
