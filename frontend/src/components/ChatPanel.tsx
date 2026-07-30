@@ -4,6 +4,12 @@ import { api } from "../lib/api";
 
 interface Message { role: "user" | "ai"; text: string; }
 
+const EXAMPLE_QUESTIONS = [
+  "What's in this room?",
+  "Where is the chair?",
+  "How far is the desk from the door?",
+];
+
 interface Props { scanId: string }
 
 export function ChatPanel({ scanId }: Props) {
@@ -76,6 +82,16 @@ export function ChatPanel({ scanId }: Props) {
         <div ref={bottomRef} />
       </div>
 
+      {messages.length <= 1 && !loading && (
+        <div style={styles.chips}>
+          {EXAMPLE_QUESTIONS.map(q => (
+            <button key={q} style={styles.chip} onClick={() => { setInput(q); }}>
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div style={styles.inputRow}>
         <input
           style={styles.input}
@@ -104,6 +120,8 @@ const styles: Record<string, React.CSSProperties> = {
   aiBubble: { alignSelf:"flex-start", background:"var(--surface-2)", color:"var(--text)", borderBottomLeftRadius:2 },
   dots: { display:"flex", gap:4, padding:"2px 0" },
   dot: { width:6, height:6, borderRadius:"50%", background:"var(--text-3)", animation:"pulse 1s ease-in-out infinite" },
+  chips:    { display:"flex", flexWrap:"wrap", gap:6, padding:"0 16px 10px" },
+  chip:     { background:"var(--surface-2)", border:"1px solid var(--border)", color:"var(--text-2)", borderRadius:20, padding:"5px 12px", fontSize:11, cursor:"pointer", whiteSpace:"nowrap" as const },
   inputRow: { display:"flex", gap:8, padding:"12px 16px", borderTop:"1px solid var(--border)" },
   input: { flex:1, background:"var(--surface-2)", border:"1px solid var(--border)", borderRadius:"var(--radius)", padding:"8px 12px", color:"var(--text)", fontSize:13, outline:"none" },
   btn: { background:"var(--accent)", color:"#fff", border:"none", borderRadius:"var(--radius)", padding:"8px 16px", fontSize:13, fontWeight:600, cursor:"pointer" },

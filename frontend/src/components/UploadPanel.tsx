@@ -53,7 +53,10 @@ export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGal
       <div style={styles.header}>
         <span style={styles.dot} />
         <span style={styles.title}>SpazIntel</span>
-        <span style={styles.sub}>Spatial Intelligence Platform</span>
+      </div>
+      <div style={styles.hero}>
+        Point your camera at any room.<br />
+        <span style={styles.heroAccent}>AI maps it, answers questions, detects what changed.</span>
       </div>
 
       {/* Upload card */}
@@ -144,7 +147,7 @@ export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGal
         </button>
         <span style={{ color:"var(--text-3)" }}>·</span>
         <button style={styles.link} onClick={() => onScanStarted("scan_001")}>
-          load scan_001
+          Try demo scan →
         </button>
         <span style={{ color:"var(--text-3)" }}>·</span>
         <button style={styles.link} onClick={onDemoMap}>
@@ -165,10 +168,12 @@ function TipRow({ icon, text }: { icon: string; text: string }) {
 
 const styles: Record<string, React.CSSProperties> = {
   root:        { display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", minHeight:"100vh", background:"var(--bg)", gap:16, padding:24, overflowY:"auto" },
-  header:      { display:"flex", alignItems:"center", gap:8, marginBottom:8 },
+  header:      { display:"flex", alignItems:"center", gap:8, marginBottom:4 },
   dot:         { width:10, height:10, borderRadius:"50%", background:"linear-gradient(135deg,#6366f1,#8b5cf6)" },
   title:       { fontWeight:700, fontSize:18, letterSpacing:"-0.01em" },
   sub:         { fontSize:12, color:"var(--text-3)" },
+  hero:        { fontSize:15, lineHeight:1.5, color:"var(--text-2)", textAlign:"center" as const, maxWidth:380, marginBottom:4 },
+  heroAccent:  { color:"var(--text)", fontWeight:600 },
   card:        { background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", padding:28, width:"100%", maxWidth:480, display:"flex", flexDirection:"column", gap:16 },
   cardTitle:   { fontSize:20, fontWeight:700, letterSpacing:"-0.01em" },
   cardSub:     { fontSize:13, color:"var(--text-2)", lineHeight:1.5 },

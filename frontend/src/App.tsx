@@ -20,6 +20,7 @@ export default function App() {
   const [scanId, setScanId]     = useState("scan_001");
   const [objCount, setObjCount] = useState(0);
   const [hasSplat, setHasSplat] = useState(true);
+  const [leftMode, setLeftMode] = useState<"map"|"splat">("map");
   const [rightTab, setRightTab] = useState<RightTab>("chat");
 
   // ── URL routing: ?scan=scan_id on load ────────────────────────────────────
@@ -55,6 +56,7 @@ export default function App() {
 
   function openScan(id: string, splat: boolean) {
     setScanId(id); setHasSplat(splat); setObjCount(0);
+    setLeftMode("map");
     pushScanUrl(id);
     setView("explore");
   }
@@ -126,18 +128,17 @@ export default function App() {
             <div style={styles.topbarActions}>
               <button
                 style={styles.iconBtn}
-                title="Copy shareable link"
                 onClick={e => {
                   const url = `${window.location.origin}${window.location.pathname}?scan=${scanId}`;
                   navigator.clipboard.writeText(url).catch(() => {});
                   const btn = e.currentTarget;
-                  btn.textContent = "✓";
-                  setTimeout(() => { btn.textContent = "🔗"; }, 1200);
+                  btn.textContent = "✓ Copied!";
+                  setTimeout(() => { btn.textContent = "🔗 Copy link"; }, 1500);
                 }}
               >
-                🔗
+                🔗 Copy link
               </button>
-              <a href={api.exportUrl(scanId)} download={`${scanId}.zip`} style={styles.iconBtn} title="Download scan (zip)">↓</a>
+              <a href={api.exportUrl(scanId)} download={`${scanId}.zip`} style={styles.iconBtn}>↓ Export</a>
               <button style={styles.newScanBtn} onClick={() => setView("gallery")}>All Scans</button>
               <button style={styles.newScanBtn} onClick={goUpload}>+ New Scan</button>
             </div>
@@ -145,8 +146,21 @@ export default function App() {
 
           <div style={styles.layout}>
             <motion.div style={styles.leftPane} initial={{ opacity:0, scale:0.98 }} animate={{ opacity:1, scale:1 }} transition={{ duration:0.4 }}>
-              <div style={styles.viewerLabel}>{hasSplat ? "3D Gaussian Splat" : "2D Room Map"}</div>
-              {hasSplat ? <SplatViewer splatUrl={splatUrl} /> : <RoomMap scanId={scanId} />}
+              <div style={styles.viewerLabel}>
+                {leftMode === "map" ? "2D Room Map" : "3D Gaussian Splat"}
+                {hasSplat && (
+                  <button
+                    style={styles.toggleBtn}
+                    onClick={() => setLeftMode(m => m === "map" ? "splat" : "map")}
+                  >
+                    {leftMode === "map" ? "3D →" : "← Map"}
+                  </button>
+                )}
+              </div>
+              {leftMode === "splat" && hasSplat
+                ? <SplatViewer splatUrl={splatUrl} />
+                : <RoomMap scanId={scanId} />
+              }
             </motion.div>
 
             <motion.div style={styles.rightPane} initial={{ opacity:0, x:16 }} animate={{ opacity:1, x:0 }} transition={{ duration:0.4, delay:0.1 }}>
@@ -159,7 +173,7 @@ export default function App() {
                 ))}
               </div>
               <div style={styles.panel}>
-                {rightTab === "chat" ? <ChatPanel scanId={scanId} /> : <DiffPanel />}
+                {rightTab === "chat" ? <ChatPanel scanId={scanId} /> : <DiffPanel currentScanId={scanId} />}
               </div>
             </motion.div>
           </div>
@@ -185,7 +199,8 @@ const styles: Record<string, React.CSSProperties> = {
   newScanBtn:   { background:"transparent", border:"1px solid var(--border)", color:"var(--text-2)", borderRadius:"var(--radius)", padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:500 },
   layout:       { flex:1, display:"grid", gridTemplateColumns:"1fr 380px", gap:12, padding:12, overflow:"hidden", minHeight:0 },
   leftPane:     { display:"flex", flexDirection:"column", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow:"hidden", position:"relative" },
-  viewerLabel:  { position:"absolute", top:12, left:12, zIndex:10, fontSize:11, fontWeight:600, color:"var(--text-3)", background:"rgba(8,8,8,0.7)", backdropFilter:"blur(4px)", padding:"4px 10px", borderRadius:20, border:"1px solid var(--border)", pointerEvents:"none" },
+  viewerLabel:  { position:"absolute", top:12, left:12, zIndex:10, fontSize:11, fontWeight:600, color:"var(--text-3)", background:"rgba(8,8,8,0.7)", backdropFilter:"blur(4px)", padding:"4px 10px", borderRadius:20, border:"1px solid var(--border)", display:"flex", alignItems:"center", gap:8 },
+  toggleBtn:    { background:"rgba(99,102,241,.2)", border:"1px solid rgba(99,102,241,.4)", color:"#a5b4fc", borderRadius:12, padding:"2px 8px", fontSize:10, fontWeight:700, cursor:"pointer", letterSpacing:".02em" },
   rightPane:    { display:"flex", flexDirection:"column", gap:8, minHeight:0 },
   tabs:         { display:"flex", gap:4, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", padding:4, flexShrink:0 },
   tab:          { flex:1, padding:"6px 12px", border:"none", background:"transparent", color:"var(--text-3)", fontSize:12, fontWeight:600, borderRadius:"var(--radius)", cursor:"pointer", transition:"all 0.15s" },

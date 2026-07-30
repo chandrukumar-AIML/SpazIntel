@@ -25,8 +25,18 @@ const STEPS: { key: StepKey; label: string; hint?: string }[] = [
 const ORDER: Record<string, number> = Object.fromEntries(STEPS.map((s, i) => [s.key, i]));
 
 export function ScanProgress({ scanId, onComplete, onError }: Props) {
-  const [job, setJob] = useState<JobStatus | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [job, setJob]         = useState<JobStatus | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const intervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startTime    = useRef(Date.now());
+
+  useEffect(() => {
+    timerRef.current = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTime.current) / 1000));
+    }, 1000);
+    return () => clearInterval(timerRef.current!);
+  }, []);
 
   useEffect(() => {
     async function poll() {
@@ -59,7 +69,12 @@ export function ScanProgress({ scanId, onComplete, onError }: Props) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
       >
-        <div style={styles.title}>Processing Room Scan</div>
+        <div style={styles.titleRow}>
+          <div style={styles.title}>Processing Room Scan</div>
+          <div style={styles.timer}>
+            {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
+          </div>
+        </div>
         <div style={styles.scanId}>{scanId}</div>
 
         <div style={styles.steps}>
@@ -109,7 +124,9 @@ export function ScanProgress({ scanId, onComplete, onError }: Props) {
 const styles: Record<string, React.CSSProperties> = {
   root:         { display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:"var(--bg)", padding:24 },
   card:         { background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", padding:32, width:"100%", maxWidth:420, display:"flex", flexDirection:"column", gap:14 },
+  titleRow:     { display:"flex", alignItems:"center", justifyContent:"space-between" },
   title:        { fontSize:18, fontWeight:700, letterSpacing:"-0.01em" },
+  timer:        { fontSize:20, fontWeight:700, fontFamily:"monospace", color:"var(--accent)", letterSpacing:".05em" },
   scanId:       { fontSize:11, color:"var(--text-3)", fontFamily:"monospace" },
   steps:        { display:"flex", flexDirection:"column", gap:2, borderTop:"1px solid var(--border)", borderBottom:"1px solid var(--border)", padding:"12px 0", margin:"4px 0" },
   stepRow:      { display:"flex", alignItems:"center", gap:12, padding:"6px 0" },
