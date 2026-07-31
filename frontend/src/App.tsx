@@ -10,29 +10,33 @@ import { CameraCapture }  from "./components/CameraCapture";
 import { LiveCapture }    from "./components/LiveCapture";
 import { ScansGallery }   from "./components/ScansGallery";
 import { ObjectCapture }  from "./components/ObjectCapture";
+import { FloorPlanView }  from "./components/FloorPlanView";
+import { EmbedViewer }    from "./components/EmbedViewer";
 import { api }            from "./lib/api";
 
-type View     = "upload" | "gallery" | "camera" | "live" | "object" | "scanning" | "explore";
+type View     = "upload" | "gallery" | "camera" | "live" | "object" | "scanning" | "explore" | "embed";
 type RightTab  = "chat" | "diff";
 type ScanMode  = "room" | "object";
+type LeftMode  = "map" | "splat" | "plan";
 
 export default function App() {
   const [view, setView]         = useState<View>("upload");
   const [scanId, setScanId]     = useState("scan_001");
   const [objCount, setObjCount] = useState(0);
   const [hasSplat, setHasSplat] = useState(true);
-  const [leftMode, setLeftMode] = useState<"map"|"splat">("map");
+  const [leftMode, setLeftMode] = useState<LeftMode>("map");
   const [rightTab, setRightTab] = useState<RightTab>("chat");
   const [scanMode, setScanMode] = useState<ScanMode>("room");
 
-  // ── URL routing: ?scan=scan_id on load ────────────────────────────────────
+  // ── URL routing: ?scan=scan_id&embed=1 on load ───────────────────────────
   useEffect(() => {
     const params    = new URLSearchParams(window.location.search);
     const scanParam = params.get("scan");
+    const isEmbed   = params.get("embed") === "1";
     if (scanParam) {
       setScanId(scanParam);
       setHasSplat(false);
-      setView("explore");
+      setView(isEmbed ? "embed" : "explore");
       api.jobStatus(scanParam)
         .then(job => { if (job.status === "complete") setHasSplat(job.has_splat ?? false); })
         .catch(() => {});
@@ -127,6 +131,12 @@ export default function App() {
         </motion.div>
       )}
 
+      {view === "embed" && (
+        <motion.div key="embed" style={styles.page} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
+          <EmbedViewer scanId={scanId} hasSplat={hasSplat} />
+        </motion.div>
+      )}
+
       {view === "explore" && (
         <motion.div key="explore" style={styles.root} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
           <header style={styles.topbar}>
@@ -162,18 +172,17 @@ export default function App() {
           <div style={styles.layout}>
             <motion.div style={styles.leftPane} initial={{ opacity:0, scale:0.98 }} animate={{ opacity:1, scale:1 }} transition={{ duration:0.4 }}>
               <div style={styles.viewerLabel}>
-                {leftMode === "map" ? "2D Room Map" : "3D Gaussian Splat"}
-                {hasSplat && (
-                  <button
-                    style={styles.toggleBtn}
-                    onClick={() => setLeftMode(m => m === "map" ? "splat" : "map")}
-                  >
-                    {leftMode === "map" ? "3D →" : "← Map"}
-                  </button>
-                )}
+                {leftMode === "map" ? "2D Room Map" : leftMode === "splat" ? "3D Gaussian Splat" : "Floor Plan"}
+                <div style={styles.modeTabs}>
+                  <button style={{ ...styles.modeTab, ...(leftMode === "map"  ? styles.modeTabActive : {}) }} onClick={() => setLeftMode("map")}>Map</button>
+                  {hasSplat && <button style={{ ...styles.modeTab, ...(leftMode === "splat" ? styles.modeTabActive : {}) }} onClick={() => setLeftMode("splat")}>3D</button>}
+                  <button style={{ ...styles.modeTab, ...(leftMode === "plan" ? styles.modeTabActive : {}) }} onClick={() => setLeftMode("plan")}>Plan</button>
+                </div>
               </div>
               {leftMode === "splat" && hasSplat
                 ? <SplatViewer splatUrl={splatUrl} />
+                : leftMode === "plan"
+                ? <FloorPlanView scanId={scanId} />
                 : <RoomMap scanId={scanId} />
               }
             </motion.div>
@@ -216,6 +225,9 @@ const styles: Record<string, React.CSSProperties> = {
   leftPane:     { display:"flex", flexDirection:"column", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow:"hidden", position:"relative" },
   viewerLabel:  { position:"absolute", top:12, left:12, zIndex:10, fontSize:11, fontWeight:600, color:"var(--text-3)", background:"rgba(8,8,8,0.7)", backdropFilter:"blur(4px)", padding:"4px 10px", borderRadius:20, border:"1px solid var(--border)", display:"flex", alignItems:"center", gap:8 },
   toggleBtn:    { background:"rgba(99,102,241,.2)", border:"1px solid rgba(99,102,241,.4)", color:"#a5b4fc", borderRadius:12, padding:"2px 8px", fontSize:10, fontWeight:700, cursor:"pointer", letterSpacing:".02em" },
+  modeTabs:     { display:"flex", gap:2 },
+  modeTab:      { background:"transparent", border:"none", color:"var(--text-3)", borderRadius:8, padding:"2px 8px", fontSize:10, fontWeight:600, cursor:"pointer", letterSpacing:".02em" },
+  modeTabActive:{ background:"rgba(99,102,241,.2)", color:"#a5b4fc", border:"1px solid rgba(99,102,241,.35)" },
   rightPane:    { display:"flex", flexDirection:"column", gap:8, minHeight:0 },
   tabs:         { display:"flex", gap:4, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", padding:4, flexShrink:0 },
   tab:          { flex:1, padding:"6px 12px", border:"none", background:"transparent", color:"var(--text-3)", fontSize:12, fontWeight:600, borderRadius:"var(--radius)", cursor:"pointer", transition:"all 0.15s" },

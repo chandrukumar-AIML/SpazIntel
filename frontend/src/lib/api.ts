@@ -45,8 +45,9 @@ export const api = {
   listScans: (): Promise<{ scans: ScanSummary[] }> =>
     fetch(`${BASE}/api/scans`).then(r => r.json()),
 
-  exportUrl: (scan_id: string) => `${BASE}/api/spatial/export/${scan_id}`,
-  splatUrl:  (scan_id: string) => `${BASE}/api/spatial/splat/${scan_id}`,
+  exportUrl:    (scan_id: string) => `${BASE}/api/spatial/export/${scan_id}`,
+  splatUrl:     (scan_id: string) => `${BASE}/api/spatial/splat/${scan_id}`,
+  floorPlanUrl: (scan_id: string) => `${BASE}/api/spatial/floor_plan/${scan_id}`,
 };
 
 export interface SceneObject {

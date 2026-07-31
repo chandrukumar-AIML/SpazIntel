@@ -224,6 +224,32 @@ async def serve_splat(scan_id: str):
     return RedirectResponse(url=f"/static/{scan_id}/splat/splat.splat", status_code=302)
 
 
+# ── Floor plan SVG ────────────────────────────────────────────────────────────
+@app.get("/api/spatial/floor_plan/{scan_id}")
+async def floor_plan(scan_id: str):
+    """Generate and return an SVG floor plan for the given scan."""
+    import sys, json as _json
+    from fastapi.responses import Response
+
+    scan_dir   = SCANS_DIR / scan_id
+    graph_path = scan_dir / "scene_graph.json"
+    if not graph_path.exists():
+        raise HTTPException(status_code=404, detail="No scene graph for this scan")
+
+    _engines = str(Path(__file__).parent.parent / "engines")
+    if _engines not in sys.path:
+        sys.path.insert(0, _engines)
+    from rce.floor_plan import generate_svg
+
+    graph = _json.loads(graph_path.read_text(encoding="utf-8"))
+    svg   = await asyncio.to_thread(generate_svg, graph)
+    return Response(
+        content=svg,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*"},
+    )
+
+
 # ── Export scan as zip ─────────────────────────────────────────────────────────
 @app.get("/api/spatial/export/{scan_id}")
 async def export_scan(scan_id: str):
