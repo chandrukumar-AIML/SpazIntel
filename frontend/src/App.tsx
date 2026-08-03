@@ -17,6 +17,7 @@ import { ReportPanel }       from "./components/ReportPanel";
 import { SearchView }        from "./components/SearchView";
 import { TimelineView }      from "./components/TimelineView";
 import { api }               from "./lib/api";
+import type { DiffResult }  from "./lib/api";
 
 type View     = "upload" | "gallery" | "camera" | "live" | "object" | "scanning" | "explore" | "embed" | "search" | "timeline";
 type RightTab  = "chat" | "diff" | "report";
@@ -34,6 +35,7 @@ export default function App() {
   const [scanMode,      setScanMode]      = useState<ScanMode>("room");
   const [mobilePanel,   setMobilePanel]   = useState<"none" | "chat" | "diff" | "report">("none");
   const [isMobile,      setIsMobile]      = useState(() => window.innerWidth < 768);
+  const [diffHighlight, setDiffHighlight] = useState<DiffResult | null>(null);
 
   useEffect(() => {
     const fn = () => setIsMobile(window.innerWidth < 768);
@@ -85,6 +87,7 @@ export default function App() {
   function openScan(id: string, splat: boolean) {
     setScanId(id); setHasSplat(splat); setObjCount(0);
     setHasPointCloud(false);
+    setDiffHighlight(null);
     setLeftMode("map");
     setScanMode("room");
     pushScanUrl(id);
@@ -288,7 +291,7 @@ export default function App() {
                 ? <PointCloudViewer scanId={scanId} label="Scan Point Cloud" />
                 : leftMode === "plan"
                 ? <FloorPlanView scanId={scanId} />
-                : <RoomMap scanId={scanId} />
+                : <RoomMap scanId={scanId} diffHighlight={diffHighlight} />
               }
             </motion.div>
 
@@ -303,7 +306,7 @@ export default function App() {
               </div>
               <div style={styles.panel}>
                 {rightTab === "chat"   ? <ChatPanel scanId={scanId} />       :
-                 rightTab === "diff"   ? <DiffPanel currentScanId={scanId} /> :
+                 rightTab === "diff"   ? <DiffPanel currentScanId={scanId} onDiffResult={setDiffHighlight} /> :
                                          <ReportPanel scanId={scanId} />}
               </div>
             </motion.div>

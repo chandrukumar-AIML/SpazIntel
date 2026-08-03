@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { api } from "../lib/api";
-import type { SceneObject } from "../lib/api";
+import type { SceneObject, DiffResult } from "../lib/api";
 
-interface Props { scanId: string }
+interface Props {
+  scanId: string;
+  diffHighlight?: DiffResult | null;
+}
 
 interface SceneGraph {
   objects: SceneObject[];
@@ -25,7 +28,7 @@ const PAD = 36;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 6;
 
-export function RoomMap({ scanId }: Props) {
+export function RoomMap({ scanId, diffHighlight }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [graph, setGraph]       = useState<SceneGraph | null>(null);
   const [hovered, setHovered]   = useState<SceneObject | null>(null);
@@ -121,6 +124,11 @@ export function RoomMap({ scanId }: Props) {
       ctx.setLineDash([]);
     }
 
+    // Build diff lookup maps once (empty if no diff)
+    const diffRemoved = new Set(diffHighlight?.changes.removed.map(o => o.label) ?? []);
+    const diffMoved   = new Set(diffHighlight?.changes.moved.map(o => o.label) ?? []);
+    const diffAdded   = diffHighlight?.changes.added ?? [];
+
     // Objects
     objects.forEach(obj => {
       const ox = PAD + obj.position.x_norm * (W - PAD * 2);
@@ -130,6 +138,30 @@ export function RoomMap({ scanId }: Props) {
       const isMeasA = measureA?.id === obj.id;
       const isMeasB = measureB?.id === obj.id;
       const r = (isHov || isMeasA || isMeasB ? 13 : 9) / z;
+
+      // Diff highlight ring drawn BEFORE the dot so it's behind
+      if (diffHighlight) {
+        const ringR = r + 10 / z;
+        if (diffRemoved.has(obj.label)) {
+          ctx.beginPath();
+          ctx.arc(ox, oy, ringR, 0, Math.PI * 2);
+          ctx.strokeStyle = "#ef4444";
+          ctx.lineWidth = 3 / z;
+          ctx.setLineDash([5 / z, 3 / z]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = "rgba(239,68,68,0.12)";
+          ctx.fill();
+        } else if (diffMoved.has(obj.label)) {
+          ctx.beginPath();
+          ctx.arc(ox, oy, ringR, 0, Math.PI * 2);
+          ctx.strokeStyle = "#f59e0b";
+          ctx.lineWidth = 3 / z;
+          ctx.stroke();
+          ctx.fillStyle = "rgba(245,158,11,0.1)";
+          ctx.fill();
+        }
+      }
 
       ctx.shadowColor = isMeasA || isMeasB ? "#fbbf24" : color;
       ctx.shadowBlur = (isHov || isMeasA || isMeasB ? 18 : 6) / z;
@@ -158,8 +190,58 @@ export function RoomMap({ scanId }: Props) {
       ctx.fillText(lbl, ox, ly + 10 / z);
     });
 
+    // Ghost dots for "added" objects (positions from after-scan)
+    if (diffHighlight) {
+      diffAdded.forEach(obj => {
+        if (!obj.position) return;
+        const ox = PAD + obj.position.x_norm * (W - PAD * 2);
+        const oy = PAD + obj.position.y_norm * (H - PAD * 2);
+        const r = 9 / z;
+        ctx.beginPath();
+        ctx.arc(ox, oy, r + 10 / z, 0, Math.PI * 2);
+        ctx.strokeStyle = "#10b981";
+        ctx.lineWidth = 2 / z;
+        ctx.setLineDash([4 / z, 3 / z]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(16,185,129,0.15)";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(ox, oy, r, 0, Math.PI * 2);
+        ctx.fillStyle = "#10b98166";
+        ctx.fill();
+        const lbl = obj.label.length > 9 ? obj.label.slice(0, 8) + "…" : obj.label;
+        ctx.font = `${9 / z}px system-ui`;
+        const tw = ctx.measureText(lbl).width;
+        const ly = oy + r + 3 / z;
+        ctx.fillStyle = "rgba(0,0,0,0.75)";
+        ctx.fillRect(ox - tw / 2 - 3 / z, ly, tw + 6 / z, 13 / z);
+        ctx.fillStyle = "#10b981";
+        ctx.textAlign = "center";
+        ctx.fillText(lbl, ox, ly + 10 / z);
+      });
+
+      // Diff legend — bottom right
+      const legendItems = [
+        ...(diffAdded.length   > 0 ? [{ color: "#10b981", label: `+${diffAdded.length} added` }]   : []),
+        ...(diffRemoved.size   > 0 ? [{ color: "#ef4444", label: `−${diffRemoved.size} removed` }] : []),
+        ...(diffMoved.size     > 0 ? [{ color: "#f59e0b", label: `↔${diffMoved.size} moved` }]    : []),
+      ];
+      if (legendItems.length > 0) {
+        const lgX = W - PAD - 5;
+        let lgY = H - PAD - legendItems.length * 16 / z;
+        ctx.font = `bold ${9 / z}px system-ui`;
+        legendItems.forEach(({ color, label }) => {
+          ctx.fillStyle = color;
+          ctx.textAlign = "right";
+          ctx.fillText(label, lgX, lgY);
+          lgY += 14 / z;
+        });
+      }
+    }
+
     ctx.restore();
-  }, [objects, hovered, measureA, measureB, roomSize]);
+  }, [objects, hovered, measureA, measureB, roomSize, diffHighlight]);
 
   useEffect(() => { draw(); }, [draw]);
 

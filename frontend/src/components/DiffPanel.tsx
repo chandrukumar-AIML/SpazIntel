@@ -7,9 +7,12 @@ interface ExtDiffResult extends DiffResult {
   summary_ai?: boolean;
 }
 
-interface Props { currentScanId?: string }
+interface Props {
+  currentScanId?: string;
+  onDiffResult?: (result: ExtDiffResult | null) => void;
+}
 
-export function DiffPanel({ currentScanId }: Props) {
+export function DiffPanel({ currentScanId, onDiffResult }: Props) {
   const [scans,   setScans]   = useState<ScanSummary[]>([]);
   const [scanA,   setScanA]   = useState(currentScanId ?? "");
   const [scanB,   setScanB]   = useState("");
@@ -38,8 +41,10 @@ export function DiffPanel({ currentScanId }: Props) {
     try {
       const r = await api.diff(scanA, scanB) as ExtDiffResult;
       setResult(r);
+      onDiffResult?.(r);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error");
+      onDiffResult?.(null);
     } finally {
       setLoading(false);
     }
