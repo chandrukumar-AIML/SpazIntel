@@ -111,7 +111,7 @@ export default function App() {
     <AnimatePresence mode="wait">
 
       {view === "upload" && (
-        <motion.div key="upload" style={styles.page} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
+        <motion.div key="upload" style={{ ...styles.page, overflowY:"auto" }} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
           <UploadPanel
             onScanStarted={onScanStarted}
             onOpenCamera={() => setView("camera")}

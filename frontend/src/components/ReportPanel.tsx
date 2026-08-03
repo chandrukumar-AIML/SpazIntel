@@ -17,7 +17,7 @@ interface ReportData {
   cached: boolean;
 }
 
-interface Props { scanId: string }
+interface Props { scanId: string; }
 
 export function ReportPanel({ scanId }: Props) {
   const [state,  setState]  = useState<"idle" | "loading" | "done" | "error">("idle");

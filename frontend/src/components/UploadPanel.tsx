@@ -51,7 +51,6 @@ export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGal
 
   return (
     <div style={styles.root}>
-      {/* Header */}
       <div style={styles.header}>
         <span style={styles.dot} />
         <span style={styles.title}>SpazIntel</span>
@@ -61,7 +60,6 @@ export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGal
         <span style={styles.heroAccent}>AI maps it, answers questions, detects what changed.</span>
       </div>
 
-      {/* Upload card */}
       <motion.div
         style={styles.card}
         initial={{ opacity: 0, y: 20 }}
@@ -71,27 +69,23 @@ export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGal
         <div style={styles.cardTitle}>Scan a Room</div>
         <div style={styles.cardSub}>Use your camera for guided capture, or upload a video / 6+ photos</div>
 
-        {/* Live Scan — primary CTA */}
         <button style={styles.liveBtn} onClick={onOpenLive}>
-          <span style={{ fontSize: 20 }}>🎥</span>
-          Live Room Scan — Real-time 3D map
+          <span style={{ fontSize: 20 }}>&#x1F3A5;</span>
+          Live Room Scan {"—"} Real-time 3D map
         </button>
 
-        {/* Object replica */}
         <button style={styles.objectBtn} onClick={onOpenObject}>
-          <span style={{ fontSize: 16 }}>📦</span>
-          Scan an Object — 6-photo 3D replica
+          <span style={{ fontSize: 16 }}>&#x1F4E6;</span>
+          Scan an Object {"—"} 6-photo 3D replica
         </button>
 
-        {/* Camera batch capture */}
         <button style={styles.cameraBtn} onClick={onOpenCamera}>
-          <span style={{ fontSize: 16 }}>📷</span>
+          <span style={{ fontSize: 16 }}>&#x1F4F7;</span>
           Guided 6-shot room capture
         </button>
 
         <div style={styles.divider}><span style={styles.dividerText}>or upload files</span></div>
 
-        {/* Drop zone */}
         <div
           style={{ ...styles.dropzone, ...(dragging ? styles.dropzoneDrag : {}) }}
           onDragOver={e => { e.preventDefault(); setDragging(true); }}
@@ -111,13 +105,13 @@ export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGal
           <AnimatePresence mode="wait">
             {files.length === 0 ? (
               <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={styles.dropContent}>
-                <div style={styles.dropIcon}>📷</div>
+                <div style={styles.dropIcon}>&#x1F4F7;</div>
                 <div style={styles.dropText}>Drop video or photos here</div>
                 <div style={styles.dropHint}>or click to browse</div>
               </motion.div>
             ) : (
               <motion.div key="files" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={styles.dropContent}>
-                <div style={styles.dropIcon}>{isVideo ? "🎥" : "🖼️"}</div>
+                <div style={styles.dropIcon}>{isVideo ? "\u{1F3A5}" : "\u{1F5BC}"}</div>
                 <div style={{ ...styles.dropText, color: valid ? "var(--success)" : "var(--warning)" }}>
                   {label}
                 </div>
@@ -130,11 +124,10 @@ export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGal
           </AnimatePresence>
         </div>
 
-        {/* Tips */}
         <div style={styles.tips}>
-          <TipRow icon="🎥" text="Video: slow 360° walkthrough, 15–60 sec" />
-          <TipRow icon="🖼️" text="Photos: 6+ shots from different angles, good overlap" />
-          <TipRow icon="💡" text="Good lighting = better detection" />
+          <TipRow icon="&#x1F3A5;" text="Video: slow 360° walkthrough, 15–60 sec" />
+          <TipRow icon="&#x1F5BC;" text="Photos: 6+ shots from different angles, good overlap" />
+          <TipRow icon="&#x1F4A1;" text="Good lighting = better detection" />
         </div>
 
         {error && <div style={styles.error}>{error}</div>}
@@ -148,19 +141,18 @@ export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGal
         </button>
       </motion.div>
 
-      {/* Or load existing */}
       <div style={styles.existingRow}>
         <button style={styles.galleryBtn} onClick={onOpenGallery}>
-          📂 My Scans
+          &#x1F4C2; My Scans
         </button>
         <button style={styles.galleryBtn} onClick={onOpenSearch}>
-          🔍 Search
+          &#x1F50D; Search
         </button>
-        <span style={{ color:"var(--text-3)" }}>·</span>
+        <span style={{ color:"var(--text-3)" }}>{"·"}</span>
         <button style={styles.link} onClick={() => onScanStarted("scan_001")}>
-          Try demo scan →
+          Try demo scan {"→"}
         </button>
-        <span style={{ color:"var(--text-3)" }}>·</span>
+        <span style={{ color:"var(--text-3)" }}>{"·"}</span>
         <button style={styles.link} onClick={onDemoMap}>
           room map
         </button>
@@ -172,13 +164,13 @@ export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGal
 function TipRow({ icon, text }: { icon: string; text: string }) {
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "var(--text-3)" }}>
-      <span>{icon}</span><span>{text}</span>
+      <span dangerouslySetInnerHTML={{ __html: icon }} /><span>{text}</span>
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  root:        { display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", minHeight:"100vh", background:"var(--bg)", gap:16, padding:24, overflowY:"auto" },
+  root:        { display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"flex-start", height:"100%", overflowY:"auto", background:"var(--bg)", gap:16, padding:"clamp(24px, calc(50vh - 340px), 80px) 24px 32px" },
   header:      { display:"flex", alignItems:"center", gap:8, marginBottom:4 },
   dot:         { width:10, height:10, borderRadius:"50%", background:"linear-gradient(135deg,#6366f1,#8b5cf6)" },
   title:       { fontWeight:700, fontSize:18, letterSpacing:"-0.01em" },
