@@ -326,7 +326,46 @@ async def _diff(payload: dict) -> SpatialResponse:
     graph_b = _load(scan_id_b)
     report = diff_graphs(graph_a, graph_b)
 
+    # Upgrade rule-based summary to Claude/Groq narrative
+    try:
+        report["summary"] = await _llm_diff_summary(report)
+        report["summary_ai"] = True
+    except Exception as e:
+        logger.warning("diff LLM summary failed (%s) — keeping rule-based", e)
+        report["summary_ai"] = False
+
     return SpatialResponse(success=True, data=report)
+
+
+async def _llm_diff_summary(report: dict) -> str:
+    """Generate a natural language summary of the diff using Claude or Groq."""
+    import asyncio
+    system_prompt = _load_prompt("spatial_diff_v1.txt")
+
+    changes = report.get("changes", {})
+    added   = [o["label"] for o in changes.get("added", [])]
+    removed = [o["label"] for o in changes.get("removed", [])]
+    moved   = [(o["label"], o.get("distance", 0)) for o in changes.get("moved", [])]
+    unchanged = report.get("unchanged_count", 0)
+
+    user_msg = (
+        f"Scan A: {report.get('scan_a')}\n"
+        f"Scan B: {report.get('scan_b')}\n\n"
+        f"Added objects:   {', '.join(added) if added else 'none'}\n"
+        f"Removed objects: {', '.join(removed) if removed else 'none'}\n"
+        f"Moved objects:   {', '.join(f'{l} (Δ{d:.2f}m)' for l, d in moved) if moved else 'none'}\n"
+        f"Unchanged:       {unchanged} objects\n\n"
+        "Write the summary."
+    )
+
+    if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_key_here":
+        return await asyncio.to_thread(_call_claude, system_prompt, user_msg, 256)
+
+    if GROQ_API_KEY and GROQ_API_KEY != "your_key_here":
+        return await asyncio.to_thread(_call_groq, system_prompt, user_msg, 256)
+
+    # No LLM — return the rule-based summary unchanged
+    return report.get("summary", "No changes detected.")
 
 
 async def _scene_graph(payload: dict) -> SpatialResponse:
