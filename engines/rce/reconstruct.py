@@ -15,16 +15,19 @@ logger = logging.getLogger(__name__)
 
 # ── COLMAP ────────────────────────────────────────────────────────────────────
 
-def run_colmap(frames_dir: str, colmap_dir: str, max_frames: int = 40, sequential: bool = True) -> dict:
+def run_colmap(frames_dir: str, colmap_dir: str, sequential: bool = True) -> dict:
     """
     Run COLMAP structure-from-motion on a set of frames.
     Produces a sparse reconstruction in colmap_dir/sparse/0/.
 
-    max_frames: subsample to this many frames before reconstruction (exhaustive matching
-                is O(N²) — 125 frames = 7800 pairs; 40 frames = 780 pairs, 10× faster).
-    sequential: use sequential matching (fast, correct for video) instead of exhaustive.
+    sequential=True  → sequential matching: O(N), correct for video walkthroughs.
+                        Consecutive frames share the most overlap; this is fast and accurate.
+    sequential=False → exhaustive matching: O(N²), for unordered photo sets.
+                        Only needed when frame ordering doesn't reflect spatial proximity.
+
+    Do NOT subsample frames — SIFT needs consecutive frames close together to match.
+    Skipping frames creates motion gaps that break sequential and exhaust matching alike.
     """
-    import shutil
     import pycolmap
 
     frames_dir  = Path(frames_dir)
@@ -34,46 +37,32 @@ def run_colmap(frames_dir: str, colmap_dir: str, max_frames: int = 40, sequentia
     colmap_dir.mkdir(parents=True, exist_ok=True)
     sparse_dir.mkdir(parents=True, exist_ok=True)
 
-    # Subsample frames: pass a temp dir with at most max_frames evenly-spaced frames
-    all_frames = sorted(frames_dir.glob("*.jpg")) + sorted(frames_dir.glob("*.png"))
-    if len(all_frames) > max_frames:
-        step = len(all_frames) // max_frames
-        all_frames = all_frames[::step][:max_frames]
-        sample_dir = colmap_dir / "frames_sample"
-        sample_dir.mkdir(exist_ok=True)
-        for i, src in enumerate(all_frames):
-            dst = sample_dir / f"frame_{i:05d}{src.suffix}"
-            if not dst.exists():
-                shutil.copy(src, dst)
-        image_path = sample_dir
-        logger.info("COLMAP: subsampled to %d frames (from %d total)", len(all_frames), len(list(frames_dir.glob("*.jpg"))))
-    else:
-        image_path = frames_dir
-        logger.info("COLMAP: using all %d frames", len(all_frames))
+    n_frames = len(list(frames_dir.glob("*.jpg")) + list(frames_dir.glob("*.png")))
+    logger.info("COLMAP: %d frames in %s", n_frames, frames_dir)
 
-    logger.info("COLMAP: feature extraction on %s", image_path)
+    logger.info("COLMAP: feature extraction")
     pycolmap.extract_features(
         database_path=str(db_path),
-        image_path=str(image_path),
+        image_path=str(frames_dir),
         camera_mode=pycolmap.CameraMode.SINGLE,
     )
 
     if sequential:
-        logger.info("COLMAP: sequential feature matching (video mode)")
+        logger.info("COLMAP: sequential matching (video walkthrough mode)")
         pycolmap.match_sequential(database_path=str(db_path))
     else:
-        logger.info("COLMAP: exhaustive feature matching")
+        logger.info("COLMAP: exhaustive matching (photo set mode)")
         pycolmap.match_exhaustive(database_path=str(db_path))
 
-    logger.info("COLMAP: sparse reconstruction")
+    logger.info("COLMAP: incremental mapping")
     maps = pycolmap.incremental_mapping(
         database_path=str(db_path),
-        image_path=str(image_path),
+        image_path=str(frames_dir),
         output_path=str(sparse_dir),
     )
 
     if not maps:
-        raise RuntimeError("COLMAP failed: no reconstruction produced. Need 8+ good frames with overlap.")
+        raise RuntimeError("COLMAP produced no reconstruction. Need 8+ frames with overlapping texture.")
 
     recon = maps[0]
     stats = {
@@ -138,7 +127,11 @@ def train_splat(
 
 
 def _load_colmap_cameras(recon, frames_dir: Path):
-    """Extract image tensors and camera intrinsics/extrinsics from COLMAP reconstruction."""
+    """Extract image tensors and camera intrinsics/extrinsics from COLMAP reconstruction.
+
+    pycolmap ≥ 3.9: img.cam_from_world() returns Rigid3d (world-to-cam).
+    We invert to get cam-to-world (c2w) for the gsplat rasterizer.
+    """
     import torch
     from PIL import Image
     import numpy as np
@@ -155,20 +148,22 @@ def _load_colmap_cameras(recon, frames_dir: Path):
         pil = Image.open(frame_path).convert("RGB").resize((256, 144))
         rgb = np.array(pil, dtype=np.float32) / 255.0  # H×W×3
 
-        R = img.rotation_matrix()
-        t = np.array(img.tvec, dtype=np.float32)
-        # World-to-camera extrinsics [R|t]
+        # pycolmap 4.x API: cam_from_world() → Rigid3d (world-to-cam)
+        cfw = img.cam_from_world()
+        R_wc = np.array(cfw.rotation.matrix(), dtype=np.float32)   # world→cam rotation
+        t_wc = np.array(cfw.translation,       dtype=np.float32)   # world→cam translation
+        # Invert to cam-to-world
         c2w = np.eye(4, dtype=np.float32)
-        c2w[:3, :3] = R.T
-        c2w[:3,  3] = -R.T @ t
+        c2w[:3, :3] = R_wc.T
+        c2w[:3,  3] = -(R_wc.T @ t_wc)
 
         images_list.append(torch.from_numpy(rgb))
         cameras_list.append({
-            "c2w": torch.from_numpy(c2w),
-            "fx": cam.focal_length_x,
-            "fy": cam.focal_length_y,
-            "cx": cam.principal_point_x,
-            "cy": cam.principal_point_y,
+            "c2w":    torch.from_numpy(c2w),
+            "fx":     cam.focal_length_x,
+            "fy":     cam.focal_length_y,
+            "cx":     cam.principal_point_x,
+            "cy":     cam.principal_point_y,
             "width":  cam.width,
             "height": cam.height,
         })
