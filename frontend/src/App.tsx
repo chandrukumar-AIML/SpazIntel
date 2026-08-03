@@ -1,35 +1,37 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { SplatViewer }    from "./components/SplatViewer";
-import { RoomMap }        from "./components/RoomMap";
-import { ChatPanel }      from "./components/ChatPanel";
-import { DiffPanel }      from "./components/DiffPanel";
-import { UploadPanel }    from "./components/UploadPanel";
-import { ScanProgress }   from "./components/ScanProgress";
-import { CameraCapture }  from "./components/CameraCapture";
-import { LiveCapture }    from "./components/LiveCapture";
-import { ScansGallery }   from "./components/ScansGallery";
-import { ObjectCapture }  from "./components/ObjectCapture";
-import { FloorPlanView }  from "./components/FloorPlanView";
-import { EmbedViewer }    from "./components/EmbedViewer";
-import { ReportPanel }    from "./components/ReportPanel";
-import { SearchView }     from "./components/SearchView";
-import { TimelineView }  from "./components/TimelineView";
-import { api }            from "./lib/api";
+import { SplatViewer }       from "./components/SplatViewer";
+import { PointCloudViewer }  from "./components/PointCloudViewer";
+import { RoomMap }           from "./components/RoomMap";
+import { ChatPanel }         from "./components/ChatPanel";
+import { DiffPanel }         from "./components/DiffPanel";
+import { UploadPanel }       from "./components/UploadPanel";
+import { ScanProgress }      from "./components/ScanProgress";
+import { CameraCapture }     from "./components/CameraCapture";
+import { LiveCapture }       from "./components/LiveCapture";
+import { ScansGallery }      from "./components/ScansGallery";
+import { ObjectCapture }     from "./components/ObjectCapture";
+import { FloorPlanView }     from "./components/FloorPlanView";
+import { EmbedViewer }       from "./components/EmbedViewer";
+import { ReportPanel }       from "./components/ReportPanel";
+import { SearchView }        from "./components/SearchView";
+import { TimelineView }      from "./components/TimelineView";
+import { api }               from "./lib/api";
 
 type View     = "upload" | "gallery" | "camera" | "live" | "object" | "scanning" | "explore" | "embed" | "search" | "timeline";
 type RightTab  = "chat" | "diff" | "report";
 type ScanMode  = "room" | "object";
-type LeftMode  = "map" | "splat" | "plan";
+type LeftMode  = "map" | "splat" | "plan" | "cloud";
 
 export default function App() {
-  const [view, setView]         = useState<View>("upload");
-  const [scanId, setScanId]     = useState("scan_001");
-  const [objCount, setObjCount] = useState(0);
-  const [hasSplat, setHasSplat] = useState(true);
-  const [leftMode, setLeftMode] = useState<LeftMode>("map");
-  const [rightTab, setRightTab] = useState<RightTab>("chat");
-  const [scanMode, setScanMode] = useState<ScanMode>("room");
+  const [view,          setView]          = useState<View>("upload");
+  const [scanId,        setScanId]        = useState("scan_001");
+  const [objCount,      setObjCount]      = useState(0);
+  const [hasSplat,      setHasSplat]      = useState(true);
+  const [hasPointCloud, setHasPointCloud] = useState(false);
+  const [leftMode,      setLeftMode]      = useState<LeftMode>("map");
+  const [rightTab,      setRightTab]      = useState<RightTab>("chat");
+  const [scanMode,      setScanMode]      = useState<ScanMode>("room");
 
   // ── URL routing: ?scan=scan_id&embed=1 on load ───────────────────────────
   useEffect(() => {
@@ -39,9 +41,15 @@ export default function App() {
     if (scanParam) {
       setScanId(scanParam);
       setHasSplat(false);
+      setHasPointCloud(false);
       setView(isEmbed ? "embed" : "explore");
       api.jobStatus(scanParam)
-        .then(job => { if (job.status === "complete") setHasSplat(job.has_splat ?? false); })
+        .then(job => {
+          if (job.status === "complete") {
+            setHasSplat(job.has_splat ?? false);
+            setHasPointCloud(job.has_pointcloud ?? false);
+          }
+        })
         .catch(() => {});
     }
   }, []);
@@ -52,13 +60,14 @@ export default function App() {
 
   function onScanStarted(id: string, mode: ScanMode = "room") {
     setScanId(id); setScanMode(mode);
+    setHasPointCloud(false);
     if (id === "scan_001") { setHasSplat(true); pushScanUrl(id); setView("explore"); return; }
     setHasSplat(false);
     setView("scanning");
   }
 
-  function onComplete(id: string, count: number, splat: boolean) {
-    setScanId(id); setObjCount(count); setHasSplat(splat);
+  function onComplete(id: string, count: number, splat: boolean, hasCloud: boolean) {
+    setScanId(id); setObjCount(count); setHasSplat(splat); setHasPointCloud(hasCloud);
     // Object scans: open straight into 3D viewer
     setLeftMode(scanMode === "object" && splat ? "splat" : "map");
     pushScanUrl(id);
@@ -67,10 +76,15 @@ export default function App() {
 
   function openScan(id: string, splat: boolean) {
     setScanId(id); setHasSplat(splat); setObjCount(0);
+    setHasPointCloud(false);
     setLeftMode("map");
     setScanMode("room");
     pushScanUrl(id);
     setView("explore");
+    // Async: check for point cloud
+    api.jobStatus(id)
+      .then(j => { if (j.has_pointcloud) setHasPointCloud(true); })
+      .catch(() => {});
   }
 
   function goUpload() {
@@ -192,15 +206,18 @@ export default function App() {
           <div style={styles.layout}>
             <motion.div style={styles.leftPane} initial={{ opacity:0, scale:0.98 }} animate={{ opacity:1, scale:1 }} transition={{ duration:0.4 }}>
               <div style={styles.viewerLabel}>
-                {leftMode === "map" ? "2D Room Map" : leftMode === "splat" ? "3D Gaussian Splat" : "Floor Plan"}
+                {leftMode === "map" ? "2D Room Map" : leftMode === "splat" ? "3D Gaussian Splat" : leftMode === "cloud" ? "Point Cloud" : "Floor Plan"}
                 <div style={styles.modeTabs}>
-                  <button style={{ ...styles.modeTab, ...(leftMode === "map"  ? styles.modeTabActive : {}) }} onClick={() => setLeftMode("map")}>Map</button>
-                  {hasSplat && <button style={{ ...styles.modeTab, ...(leftMode === "splat" ? styles.modeTabActive : {}) }} onClick={() => setLeftMode("splat")}>3D</button>}
-                  <button style={{ ...styles.modeTab, ...(leftMode === "plan" ? styles.modeTabActive : {}) }} onClick={() => setLeftMode("plan")}>Plan</button>
+                  <button style={{ ...styles.modeTab, ...(leftMode === "map"   ? styles.modeTabActive : {}) }} onClick={() => setLeftMode("map")}>Map</button>
+                  {hasSplat       && <button style={{ ...styles.modeTab, ...(leftMode === "splat" ? styles.modeTabActive : {}) }} onClick={() => setLeftMode("splat")}>3D</button>}
+                  {hasPointCloud  && <button style={{ ...styles.modeTab, ...(leftMode === "cloud" ? styles.modeTabActive : {}) }} onClick={() => setLeftMode("cloud")}>Cloud</button>}
+                  <button style={{ ...styles.modeTab, ...(leftMode === "plan"  ? styles.modeTabActive : {}) }} onClick={() => setLeftMode("plan")}>Plan</button>
                 </div>
               </div>
               {leftMode === "splat" && hasSplat
                 ? <SplatViewer splatUrl={splatUrl} />
+                : leftMode === "cloud"
+                ? <PointCloudViewer scanId={scanId} label="Scan Point Cloud" />
                 : leftMode === "plan"
                 ? <FloorPlanView scanId={scanId} />
                 : <RoomMap scanId={scanId} />

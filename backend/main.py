@@ -105,20 +105,36 @@ async def job_status(scan_id: str):
         graph_path = SCANS_DIR / scan_id / "scene_graph.json"
         if graph_path.exists():
             import json
-            graph = json.loads(graph_path.read_text())
+            graph     = json.loads(graph_path.read_text())
             splat_dir = SCANS_DIR / scan_id / "splat"
-            has_splat = splat_dir.exists() and any(splat_dir.glob("*.ply"))
+            pc_path   = SCANS_DIR / scan_id / "pointcloud" / "pointcloud.ply"
             return {
-                "scan_id":      scan_id,
-                "status":       "complete",
-                "step":         "Complete",
-                "objects_found": len(graph.get("objects", [])),
-                "frames_count": 0,
-                "has_splat":    has_splat,
-                "error":        None,
+                "scan_id":        scan_id,
+                "status":         "complete",
+                "step":           "Complete",
+                "objects_found":  len(graph.get("objects", [])),
+                "frames_count":   0,
+                "has_splat":      splat_dir.exists() and any(splat_dir.glob("*.ply")),
+                "has_pointcloud": pc_path.exists(),
+                "error":          None,
             }
-        return {"scan_id": scan_id, "status": "not_found", "step": "", "has_splat": False, "error": None}
+        return {"scan_id": scan_id, "status": "not_found", "step": "", "has_splat": False, "has_pointcloud": False, "error": None}
     return {"scan_id": scan_id, **job}
+
+
+# ── Point cloud PLY (colored, from DUSt3R or COLMAP sparse) ──────────────────
+@app.get("/api/spatial/pointcloud/{scan_id}")
+async def serve_pointcloud(scan_id: str):
+    """Serve the colored point cloud PLY for a scan (DUSt3R or COLMAP sparse fallback)."""
+    from fastapi.responses import FileResponse
+    pc_path = SCANS_DIR / scan_id / "pointcloud" / "pointcloud.ply"
+    if not pc_path.exists():
+        raise HTTPException(status_code=404, detail="Point cloud not available for this scan")
+    return FileResponse(
+        str(pc_path),
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*"},
+    )
 
 
 # ── Scan list ─────────────────────────────────────────────────────────────────
@@ -142,7 +158,9 @@ async def list_scans():
                 objects_found = len(g.get("objects", []))
             except Exception:
                 pass
-        has_splat = splat_dir.exists() and any(splat_dir.glob("*.ply"))
+        has_splat      = splat_dir.exists() and any(splat_dir.glob("*.ply"))
+        pc_path        = scan_dir / "pointcloud" / "pointcloud.ply"
+        has_pointcloud = pc_path.exists()
         # Use the timestamp embedded in scan_id (scan_<unix>) to avoid mtime drift.
         # Validate > 2020-01-01 so "scan_001" (parses to epoch 1) falls back to ctime.
         try:
@@ -165,12 +183,13 @@ async def list_scans():
             except Exception:
                 pass
         results.append({
-            "scan_id":      scan_dir.name,
-            "name":         meta.get("name"),
-            "status":       status,
-            "objects_found": objects_found,
-            "has_splat":    has_splat,
-            "created_at":   created_at,
+            "scan_id":        scan_dir.name,
+            "name":           meta.get("name"),
+            "status":         status,
+            "objects_found":  objects_found,
+            "has_splat":      has_splat,
+            "has_pointcloud": has_pointcloud,
+            "created_at":     created_at,
         })
     return {"scans": results}
 

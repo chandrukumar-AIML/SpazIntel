@@ -37,6 +37,7 @@ def start(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool, mode: 
         "frames_count": 0,
         "objects_found": 0,
         "has_splat": False,
+        "has_pointcloud": False,
         "error": None,
         "mode": mode,
     }
@@ -81,7 +82,22 @@ def _run(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool, mode: s
         _set(scan_id, frames_count=len(frames))
         logger.info("scan_id=%s frames=%d", scan_id, len(frames))
 
-        # ── Step 2: object detection (runs exactly once) ───────────────────
+        # ── Step 2: Fast 3D preview (DUSt3R, if installed) ────────────────
+        try:
+            from rce.reconstruct_fast import run_fast_reconstruction, dust3r_available
+            if dust3r_available():
+                _set(scan_id, status="fast_3d", step="Fast 3D preview (DUSt3R)… ~30s")
+                pc_dir = scan_dir / "pointcloud"
+                # Use up to 12 representative frames for DUSt3R
+                sample = frames[::max(1, len(frames) // 12)][:12]
+                pc_result = run_fast_reconstruction(sample, str(pc_dir))
+                if pc_result.get("ply_path"):
+                    _set(scan_id, has_pointcloud=True)
+                    logger.info("scan_id=%s fast_3d done: %d pts (DUSt3R)", scan_id, pc_result["point_count"])
+        except Exception as e:
+            logger.warning("scan_id=%s fast_3d failed: %s — continuing", scan_id, e)
+
+        # ── Step 3: object detection (runs exactly once) ───────────────────
         detections_dir = scan_dir / "detections"
         detections_dir.mkdir(parents=True, exist_ok=True)
 
@@ -113,6 +129,18 @@ def _run(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool, mode: s
                 logger.info("scan_id=%s colmap=%s", scan_id, colmap_stats)
 
                 # ── Step 5: gsplat training ───────────────────────────────
+                # COLMAP sparse point cloud fallback (when DUSt3R not installed)
+                if not _jobs[scan_id].get("has_pointcloud", False) and colmap_stats.get("points3D", 0) > 50:
+                    try:
+                        from rce.reconstruct_fast import extract_colmap_pointcloud
+                        pc_dir    = scan_dir / "pointcloud"
+                        pc_result = extract_colmap_pointcloud(colmap_stats["sparse_dir"], str(pc_dir))
+                        if pc_result.get("ply_path"):
+                            _set(scan_id, has_pointcloud=True)
+                            logger.info("scan_id=%s COLMAP sparse point cloud: %d pts", scan_id, pc_result["point_count"])
+                    except Exception as e:
+                        logger.warning("scan_id=%s COLMAP point cloud export failed: %s", scan_id, e)
+
                 if not _SKIP_SPLAT and colmap_stats.get("points3D", 0) >= 100:
                     _set(scan_id, status="splat", step=f"Training 3D Gaussian Splat ({splat_steps} steps)…")
                     try:

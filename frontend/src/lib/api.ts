@@ -57,11 +57,12 @@ export const api = {
   listScans: (): Promise<{ scans: ScanSummary[] }> =>
     fetch(`${BASE}/api/scans`).then(r => r.json()),
 
-  exportUrl:    (scan_id: string) => `${BASE}/api/spatial/export/${scan_id}`,
-  exportObjUrl: (scan_id: string) => `${BASE}/api/spatial/export/${scan_id}/obj`,
-  exportGltfUrl:(scan_id: string) => `${BASE}/api/spatial/export/${scan_id}/gltf`,
-  splatUrl:     (scan_id: string) => `${BASE}/api/spatial/splat/${scan_id}`,
-  floorPlanUrl: (scan_id: string) => `${BASE}/api/spatial/floor_plan/${scan_id}`,
+  exportUrl:      (scan_id: string) => `${BASE}/api/spatial/export/${scan_id}`,
+  exportObjUrl:   (scan_id: string) => `${BASE}/api/spatial/export/${scan_id}/obj`,
+  exportGltfUrl:  (scan_id: string) => `${BASE}/api/spatial/export/${scan_id}/gltf`,
+  splatUrl:       (scan_id: string) => `${BASE}/api/spatial/splat/${scan_id}`,
+  floorPlanUrl:   (scan_id: string) => `${BASE}/api/spatial/floor_plan/${scan_id}`,
+  pointcloudUrl:  (scan_id: string) => `${BASE}/api/spatial/pointcloud/${scan_id}`,
 };
 
 export interface SceneObject {
@@ -73,11 +74,12 @@ export interface SceneObject {
 
 export interface JobStatus {
   scan_id: string;
-  status: "queued" | "extracting" | "depth" | "detecting" | "colmap" | "splat" | "building_graph" | "complete" | "error" | "not_found";
+  status: "queued" | "extracting" | "fast_3d" | "depth" | "detecting" | "colmap" | "splat" | "building_graph" | "complete" | "error" | "not_found";
   step: string;
   frames_count: number;
   objects_found: number;
   has_splat: boolean;
+  has_pointcloud?: boolean;
   error: string | null;
 }
 
@@ -87,6 +89,7 @@ export interface ScanSummary {
   status: string;
   objects_found: number;
   has_splat: boolean;
+  has_pointcloud?: boolean;
   created_at: number;
 }
 
