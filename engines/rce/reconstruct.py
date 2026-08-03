@@ -15,12 +15,16 @@ logger = logging.getLogger(__name__)
 
 # ── COLMAP ────────────────────────────────────────────────────────────────────
 
-def run_colmap(frames_dir: str, colmap_dir: str) -> dict:
+def run_colmap(frames_dir: str, colmap_dir: str, max_frames: int = 40, sequential: bool = True) -> dict:
     """
     Run COLMAP structure-from-motion on a set of frames.
     Produces a sparse reconstruction in colmap_dir/sparse/0/.
-    Returns dict with camera/image/point counts.
+
+    max_frames: subsample to this many frames before reconstruction (exhaustive matching
+                is O(N²) — 125 frames = 7800 pairs; 40 frames = 780 pairs, 10× faster).
+    sequential: use sequential matching (fast, correct for video) instead of exhaustive.
     """
+    import shutil
     import pycolmap
 
     frames_dir  = Path(frames_dir)
@@ -30,31 +34,51 @@ def run_colmap(frames_dir: str, colmap_dir: str) -> dict:
     colmap_dir.mkdir(parents=True, exist_ok=True)
     sparse_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info("COLMAP: feature extraction on %s", frames_dir)
+    # Subsample frames: pass a temp dir with at most max_frames evenly-spaced frames
+    all_frames = sorted(frames_dir.glob("*.jpg")) + sorted(frames_dir.glob("*.png"))
+    if len(all_frames) > max_frames:
+        step = len(all_frames) // max_frames
+        all_frames = all_frames[::step][:max_frames]
+        sample_dir = colmap_dir / "frames_sample"
+        sample_dir.mkdir(exist_ok=True)
+        for i, src in enumerate(all_frames):
+            dst = sample_dir / f"frame_{i:05d}{src.suffix}"
+            if not dst.exists():
+                shutil.copy(src, dst)
+        image_path = sample_dir
+        logger.info("COLMAP: subsampled to %d frames (from %d total)", len(all_frames), len(list(frames_dir.glob("*.jpg"))))
+    else:
+        image_path = frames_dir
+        logger.info("COLMAP: using all %d frames", len(all_frames))
+
+    logger.info("COLMAP: feature extraction on %s", image_path)
     pycolmap.extract_features(
         database_path=str(db_path),
-        image_path=str(frames_dir),
+        image_path=str(image_path),
         camera_mode=pycolmap.CameraMode.SINGLE,
     )
 
-    logger.info("COLMAP: exhaustive feature matching")
-    pycolmap.match_exhaustive(database_path=str(db_path))
+    if sequential:
+        logger.info("COLMAP: sequential feature matching (video mode)")
+        pycolmap.match_sequential(database_path=str(db_path))
+    else:
+        logger.info("COLMAP: exhaustive feature matching")
+        pycolmap.match_exhaustive(database_path=str(db_path))
 
     logger.info("COLMAP: sparse reconstruction")
     maps = pycolmap.incremental_mapping(
         database_path=str(db_path),
-        image_path=str(frames_dir),
+        image_path=str(image_path),
         output_path=str(sparse_dir),
     )
 
     if not maps:
         raise RuntimeError("COLMAP failed: no reconstruction produced. Need 8+ good frames with overlap.")
 
-    # maps is {0: Reconstruction, ...} — take first
     recon = maps[0]
     stats = {
-        "cameras": len(recon.cameras),
-        "images":  len(recon.images),
+        "cameras":  len(recon.cameras),
+        "images":   len(recon.images),
         "points3D": len(recon.points3D),
         "sparse_dir": str(sparse_dir / "0"),
     }
