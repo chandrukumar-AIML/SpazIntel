@@ -68,7 +68,7 @@ export function DiffPanel({ currentScanId }: Props) {
                 <div style={styles.selectLabel}>Before</div>
                 <select style={styles.select} value={scanA} onChange={e => setScanA(e.target.value)}>
                   {completedScans.map(s => (
-                    <option key={s.scan_id} value={s.scan_id}>{s.scan_id} · {s.objects_found} obj</option>
+                    <option key={s.scan_id} value={s.scan_id}>{s.name ?? s.scan_id} · {s.objects_found} obj</option>
                   ))}
                 </select>
               </div>
@@ -77,7 +77,7 @@ export function DiffPanel({ currentScanId }: Props) {
                 <div style={styles.selectLabel}>After</div>
                 <select style={styles.select} value={scanB} onChange={e => setScanB(e.target.value)}>
                   {completedScans.map(s => (
-                    <option key={s.scan_id} value={s.scan_id}>{s.scan_id} · {s.objects_found} obj</option>
+                    <option key={s.scan_id} value={s.scan_id}>{s.name ?? s.scan_id} · {s.objects_found} obj</option>
                   ))}
                 </select>
               </div>
@@ -105,7 +105,9 @@ export function DiffPanel({ currentScanId }: Props) {
               <div style={styles.summary}>{result.summary}</div>
 
               {!hasChanges && (
-                <div style={styles.noChange}>No changes detected between {result.scan_a} and {result.scan_b}</div>
+                <div style={styles.noChange}>
+                  ✓ No changes detected between {scans.find(s => s.scan_id === result.scan_a)?.name ?? result.scan_a} and {scans.find(s => s.scan_id === result.scan_b)?.name ?? result.scan_b}
+                </div>
               )}
 
               {result.changes.added.length > 0 && (

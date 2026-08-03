@@ -12,10 +12,13 @@ import { ScansGallery }   from "./components/ScansGallery";
 import { ObjectCapture }  from "./components/ObjectCapture";
 import { FloorPlanView }  from "./components/FloorPlanView";
 import { EmbedViewer }    from "./components/EmbedViewer";
+import { ReportPanel }    from "./components/ReportPanel";
+import { SearchView }     from "./components/SearchView";
+import { TimelineView }  from "./components/TimelineView";
 import { api }            from "./lib/api";
 
-type View     = "upload" | "gallery" | "camera" | "live" | "object" | "scanning" | "explore" | "embed";
-type RightTab  = "chat" | "diff";
+type View     = "upload" | "gallery" | "camera" | "live" | "object" | "scanning" | "explore" | "embed" | "search" | "timeline";
+type RightTab  = "chat" | "diff" | "report";
 type ScanMode  = "room" | "object";
 type LeftMode  = "map" | "splat" | "plan";
 
@@ -90,6 +93,7 @@ export default function App() {
             onOpenLive={() => setView("live")}
             onOpenGallery={() => setView("gallery")}
             onOpenObject={() => setView("object")}
+            onOpenSearch={() => setView("search")}
             onDemoMap={() => { setScanId("scan_001"); setHasSplat(false); pushScanUrl("scan_001"); setView("explore"); }}
           />
         </motion.div>
@@ -97,7 +101,19 @@ export default function App() {
 
       {view === "gallery" && (
         <motion.div key="gallery" style={styles.page} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
-          <ScansGallery onOpen={openScan} onNewScan={goUpload} />
+          <ScansGallery onOpen={openScan} onNewScan={goUpload} onSearch={() => setView("search")} onTimeline={() => setView("timeline")} />
+        </motion.div>
+      )}
+
+      {view === "search" && (
+        <motion.div key="search" style={styles.page} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
+          <SearchView onOpen={openScan} onBack={() => setView("gallery")} />
+        </motion.div>
+      )}
+
+      {view === "timeline" && (
+        <motion.div key="timeline" style={styles.page} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
+          <TimelineView onOpen={openScan} onBack={() => setView("gallery")} />
         </motion.div>
       )}
 
@@ -163,7 +179,11 @@ export default function App() {
               >
                 🔗 Copy link
               </button>
-              <a href={api.exportUrl(scanId)} download={`${scanId}.zip`} style={styles.iconBtn}>↓ Export</a>
+              <a href={api.exportUrl(scanId)} download={`${scanId}.zip`} style={styles.iconBtn}>↓ ZIP</a>
+              {hasSplat && <>
+                <a href={api.exportObjUrl(scanId)} download={`${scanId}.obj`} style={styles.iconBtn}>↓ OBJ</a>
+                <a href={api.exportGltfUrl(scanId)} download={`${scanId}.glb`} style={styles.iconBtn}>↓ GLB</a>
+              </>}
               <button style={styles.newScanBtn} onClick={() => setView("gallery")}>All Scans</button>
               <button style={styles.newScanBtn} onClick={goUpload}>+ New Scan</button>
             </div>
@@ -189,15 +209,17 @@ export default function App() {
 
             <motion.div style={styles.rightPane} initial={{ opacity:0, x:16 }} animate={{ opacity:1, x:0 }} transition={{ duration:0.4, delay:0.1 }}>
               <div style={styles.tabs}>
-                {(["chat","diff"] as RightTab[]).map(tab => (
+                {(["chat","diff","report"] as RightTab[]).map(tab => (
                   <button key={tab} onClick={() => setRightTab(tab)}
                     style={{ ...styles.tab, ...(rightTab===tab ? styles.tabActive : {}) }}>
-                    {tab === "chat" ? "Q&A" : "Change Detect"}
+                    {tab === "chat" ? "Q&A" : tab === "diff" ? "Changes" : "Report"}
                   </button>
                 ))}
               </div>
               <div style={styles.panel}>
-                {rightTab === "chat" ? <ChatPanel scanId={scanId} /> : <DiffPanel currentScanId={scanId} />}
+                {rightTab === "chat"   ? <ChatPanel scanId={scanId} />       :
+                 rightTab === "diff"   ? <DiffPanel currentScanId={scanId} /> :
+                                         <ReportPanel scanId={scanId} />}
               </div>
             </motion.div>
           </div>

@@ -143,16 +143,30 @@ async def list_scans():
             except Exception:
                 pass
         has_splat = splat_dir.exists() and any(splat_dir.glob("*.ply"))
+        # Use the timestamp embedded in scan_id (scan_<unix>) to avoid mtime drift.
+        # Validate > 2020-01-01 so "scan_001" (parses to epoch 1) falls back to ctime.
         try:
-            created_at = int(scan_dir.stat().st_mtime)
-        except Exception:
-            created_at = 0
+            ts = int(scan_dir.name.split("_", 1)[1])
+            created_at = ts if ts > 1_577_836_800 else int(scan_dir.stat().st_ctime)
+        except (IndexError, ValueError):
+            try:
+                created_at = int(scan_dir.stat().st_ctime)
+            except Exception:
+                created_at = 0
         # Also check in-memory pipeline jobs for still-running scans
         job = pipeline_runner.get(scan_dir.name)
         if job and job.get("status") not in ("complete", "error"):
             status = job.get("status", "processing")
+        meta: dict = {}
+        meta_path = scan_dir / "meta.json"
+        if meta_path.exists():
+            try:
+                meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
         results.append({
             "scan_id":      scan_dir.name,
+            "name":         meta.get("name"),
             "status":       status,
             "objects_found": objects_found,
             "has_splat":    has_splat,
@@ -299,6 +313,139 @@ async def export_scan(scan_id: str):
         buf,
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename={scan_id}.zip"},
+    )
+
+
+# ── Multi-format export (OBJ / GLB) ──────────────────────────────────────────
+
+def _parse_ply_gaussians(ply_path: Path, opacity_threshold: float = 0.05):
+    """Return (x,y,z,r,g,b) numpy arrays from a 3DGS PLY, filtered by opacity."""
+    import numpy as np
+    data = ply_path.read_bytes()
+    end  = data.index(b"end_header\n") + len(b"end_header\n")
+    hdr  = data[:end].decode()
+    props = [l.split()[-1] for l in hdr.splitlines() if l.startswith("property float")]
+    N    = int([l for l in hdr.splitlines() if l.startswith("element vertex")][0].split()[-1])
+    body = np.frombuffer(data[end:], dtype=np.float32).reshape(N, len(props))
+    idx  = {p: i for i, p in enumerate(props)}
+
+    SH_C0 = 0.28209479177387814
+    def sigmoid(v): return 1.0 / (1.0 + np.exp(-np.clip(v, -80, 80)))
+
+    a = sigmoid(body[:, idx["opacity"]])
+    mask = a > opacity_threshold
+    body = body[mask]
+
+    x = body[:, idx["x"]]
+    y = body[:, idx["y"]]
+    z = body[:, idx["z"]]
+    r = np.clip(sigmoid(SH_C0 * body[:, idx["f_dc_0"]] + 0.5), 0, 1)
+    g = np.clip(sigmoid(SH_C0 * body[:, idx["f_dc_1"]] + 0.5), 0, 1)
+    b = np.clip(sigmoid(SH_C0 * body[:, idx["f_dc_2"]] + 0.5), 0, 1)
+    return x, y, z, r, g, b
+
+
+def _ply_to_obj(ply_path: Path) -> bytes:
+    x, y, z, r, g, b = _parse_ply_gaussians(ply_path)
+    lines = [
+        "# SpazIntel point-cloud export (vertex colors as v x y z r g b)",
+        f"# {len(x)} points",
+        "",
+    ]
+    for i in range(len(x)):
+        lines.append(f"v {x[i]:.4f} {y[i]:.4f} {z[i]:.4f} {r[i]:.4f} {g[i]:.4f} {b[i]:.4f}")
+    return "\n".join(lines).encode()
+
+
+def _ply_to_glb(ply_path: Path, graph_path: Path | None = None) -> bytes:
+    import numpy as np, json as _json, struct
+    x, y, z, r, g, b = _parse_ply_gaussians(ply_path)
+    n = len(x)
+
+    pos_buf = np.stack([x, y, z], axis=1).astype(np.float32).tobytes()
+    col_buf = np.stack([r, g, b], axis=1).astype(np.float32).tobytes()
+    bin_data = pos_buf + col_buf
+    bin_pad  = (4 - len(bin_data) % 4) % 4
+    bin_data += b"\x00" * bin_pad
+
+    nodes = [{"mesh": 0, "name": "point_cloud"}]
+
+    # Optional: add scene-graph objects as named empty nodes
+    if graph_path and graph_path.exists():
+        try:
+            graph = _json.loads(graph_path.read_text(encoding="utf-8"))
+            for obj in graph.get("objects", []):
+                wx = obj.get("world_x_m")
+                wy = obj.get("world_y_m")
+                wz = obj["position"].get("z_m")
+                if None not in (wx, wy, wz):
+                    nodes.append({
+                        "name": obj["label"],
+                        "translation": [float(wx), float(wy), float(wz)],
+                    })
+        except Exception:
+            pass
+
+    gltf = {
+        "asset":  {"version": "2.0", "generator": "SpazIntel Atlas"},
+        "scene":  0,
+        "scenes": [{"nodes": list(range(len(nodes)))}],
+        "nodes":  nodes,
+        "meshes": [{"name": "point_cloud", "primitives": [{"attributes": {"POSITION": 0, "COLOR_0": 1}, "mode": 0}]}],
+        "accessors": [
+            {"bufferView": 0, "componentType": 5126, "count": n, "type": "VEC3",
+             "min": [float(x.min()), float(y.min()), float(z.min())],
+             "max": [float(x.max()), float(y.max()), float(z.max())]},
+            {"bufferView": 1, "componentType": 5126, "count": n, "type": "VEC3"},
+        ],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0,    "byteLength": n * 12},
+            {"buffer": 0, "byteOffset": n*12, "byteLength": n * 12},
+        ],
+        "buffers": [{"byteLength": len(bin_data)}],
+    }
+
+    json_bytes = _json.dumps(gltf, separators=(",", ":")).encode("utf-8")
+    json_pad   = (4 - len(json_bytes) % 4) % 4
+    json_bytes += b" " * json_pad
+
+    json_chunk = struct.pack("<II", len(json_bytes), 0x4E4F534A) + json_bytes
+    bin_chunk  = struct.pack("<II", len(bin_data),  0x004E4942) + bin_data
+    total      = 12 + len(json_chunk) + len(bin_chunk)
+    header     = struct.pack("<III", 0x46546C67, 2, total)
+    return header + json_chunk + bin_chunk
+
+
+@app.get("/api/spatial/export/{scan_id}/obj")
+async def export_obj(scan_id: str):
+    scan_dir = SCANS_DIR / scan_id
+    ply_path = scan_dir / "splat" / "splat.ply"
+    if not ply_path.exists():
+        raise HTTPException(status_code=404, detail="No splat for this scan")
+    from fastapi.responses import StreamingResponse
+    import io
+    content = await asyncio.to_thread(_ply_to_obj, ply_path)
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="text/plain",
+        headers={"Content-Disposition": f"attachment; filename={scan_id}.obj"},
+    )
+
+
+@app.get("/api/spatial/export/{scan_id}/gltf")
+async def export_gltf(scan_id: str):
+    scan_dir   = SCANS_DIR / scan_id
+    ply_path   = scan_dir / "splat" / "splat.ply"
+    graph_path = scan_dir / "scene_graph.json"
+    if not ply_path.exists():
+        raise HTTPException(status_code=404, detail="No splat for this scan")
+    from fastapi.responses import StreamingResponse
+    import io
+    content = await asyncio.to_thread(_ply_to_glb, ply_path, graph_path)
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="model/gltf-binary",
+        headers={"Content-Disposition": f"attachment; filename={scan_id}.glb"},
     )
 
 

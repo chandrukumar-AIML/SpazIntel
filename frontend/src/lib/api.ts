@@ -42,10 +42,24 @@ export const api = {
   measure: (scan_id: string, label_a: string, label_b: string) =>
     action<{ label_a: string; label_b: string; distance_m: number; note: string }>("measure", { scan_id, label_a, label_b }),
 
+  report: (scan_id: string, regen = false) =>
+    action<ReportData>("report", { scan_id, regen }),
+
+  search: (query: string) =>
+    action<SearchData>("search", { query }),
+
+  rename: (scan_id: string, name: string) =>
+    action<{ scan_id: string; name: string }>("rename", { scan_id, name }),
+
+  deleteScan: (scan_id: string) =>
+    action<{ scan_id: string; deleted: boolean }>("delete", { scan_id }),
+
   listScans: (): Promise<{ scans: ScanSummary[] }> =>
     fetch(`${BASE}/api/scans`).then(r => r.json()),
 
   exportUrl:    (scan_id: string) => `${BASE}/api/spatial/export/${scan_id}`,
+  exportObjUrl: (scan_id: string) => `${BASE}/api/spatial/export/${scan_id}/obj`,
+  exportGltfUrl:(scan_id: string) => `${BASE}/api/spatial/export/${scan_id}/gltf`,
   splatUrl:     (scan_id: string) => `${BASE}/api/spatial/splat/${scan_id}`,
   floorPlanUrl: (scan_id: string) => `${BASE}/api/spatial/floor_plan/${scan_id}`,
 };
@@ -69,10 +83,41 @@ export interface JobStatus {
 
 export interface ScanSummary {
   scan_id: string;
+  name?: string;
   status: string;
   objects_found: number;
   has_splat: boolean;
   created_at: number;
+}
+
+interface SearchResultItem {
+  scan_id: string;
+  name?: string;
+  score: number;
+  reason: string;
+  preview_objects: string[];
+}
+
+interface SearchData {
+  query: string;
+  results: SearchResultItem[];
+  total_scans_searched: number;
+}
+
+interface ReportData {
+  scan_id: string;
+  room_type: string;
+  overview: string;
+  insights: string[];
+  metrics: {
+    object_count: number;
+    room_width_m: number | null;
+    room_depth_m: number | null;
+    distance_pairs: number;
+  };
+  objects: { label: string; confidence: number }[];
+  top_distances: { from: string; to: string; distance_m: number }[];
+  cached: boolean;
 }
 
 export interface DiffResult {

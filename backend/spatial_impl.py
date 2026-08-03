@@ -12,7 +12,8 @@ from typing import Any
 
 from models import SpatialResponse
 from constants import (
-    ACTION_SCAN, ACTION_QUERY, ACTION_DIFF, ACTION_STATUS, ACTION_SCENE_GRAPH, ACTION_MEASURE,
+    ACTION_SCAN, ACTION_QUERY, ACTION_DIFF, ACTION_STATUS, ACTION_SCENE_GRAPH, ACTION_MEASURE, ACTION_REPORT, ACTION_SEARCH,
+    ACTION_RENAME, ACTION_DELETE,
     LLM_PRIMARY, LLM_GROQ_MODEL, PROMPT_SPATIAL_QA_VERSION,
 )
 
@@ -33,6 +34,10 @@ async def dispatch(action: str, payload: dict[str, Any]) -> SpatialResponse:
         ACTION_STATUS:      _status,
         ACTION_SCENE_GRAPH: _scene_graph,
         ACTION_MEASURE:     _measure,
+        ACTION_REPORT:      _report,
+        ACTION_SEARCH:      _search,
+        ACTION_RENAME:      _rename,
+        ACTION_DELETE:      _delete,
     }
     try:
         return await handlers[action](payload)
@@ -181,12 +186,12 @@ async def _llm_query(question: str, scene_graph: dict) -> str:
     raise RuntimeError("No LLM available. Set ANTHROPIC_API_KEY or GROQ_API_KEY in .env.")
 
 
-def _call_claude(system_prompt: str, user_msg: str) -> str:
+def _call_claude(system_prompt: str, user_msg: str, max_tokens: int = 512) -> str:
     import anthropic
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     msg = client.messages.create(
         model=LLM_PRIMARY,
-        max_tokens=512,
+        max_tokens=max_tokens,
         system=system_prompt,
         messages=[{"role": "user", "content": user_msg}],
     )
@@ -194,12 +199,12 @@ def _call_claude(system_prompt: str, user_msg: str) -> str:
     return msg.content[0].text
 
 
-def _call_groq(system_prompt: str, user_msg: str) -> str:
+def _call_groq(system_prompt: str, user_msg: str, max_tokens: int = 512) -> str:
     from groq import Groq
     client = Groq(api_key=GROQ_API_KEY)
     resp = client.chat.completions.create(
         model=LLM_GROQ_MODEL,
-        max_tokens=512,
+        max_tokens=max_tokens,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_msg},
@@ -322,6 +327,252 @@ async def _measure(payload: dict) -> SpatialResponse:
     })
 
 
+async def _search(payload: dict) -> SpatialResponse:
+    """Cross-scan semantic search: finds which scans match a natural-language query."""
+    query = payload.get("query", "").strip()
+    if not query:
+        return SpatialResponse(success=False, error="query required")
+
+    # Load all complete scans
+    all_scans: list[tuple[str, dict]] = []
+    if SCANS_DIR.exists():
+        for scan_dir in sorted(SCANS_DIR.iterdir(), reverse=True):
+            if not scan_dir.is_dir() or not scan_dir.name.startswith("scan_"):
+                continue
+            graph_path = scan_dir / "scene_graph.json"
+            if not graph_path.exists():
+                continue
+            try:
+                g = json.loads(graph_path.read_text(encoding="utf-8"))
+                all_scans.append((scan_dir.name, g))
+            except Exception:
+                continue
+
+    if not all_scans:
+        return SpatialResponse(success=True, data={
+            "query": query, "results": [], "total_scans_searched": 0
+        })
+
+    results: list[dict] = []
+    if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_key_here":
+        try:
+            results = await _llm_search_rank(query, all_scans)
+        except Exception as e:
+            logger.warning("search LLM failed (%s) — keyword fallback", e)
+            results = _keyword_search(query, all_scans)
+    elif GROQ_API_KEY and GROQ_API_KEY != "your_key_here":
+        try:
+            results = await _llm_search_rank(query, all_scans, use_groq=True)
+        except Exception as e:
+            logger.warning("Groq search failed (%s) — keyword fallback", e)
+            results = _keyword_search(query, all_scans)
+    else:
+        results = _keyword_search(query, all_scans)
+
+    # Enrich results with human-readable name from meta.json
+    for r in results:
+        meta_path = SCANS_DIR / r["scan_id"] / "meta.json"
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                r["name"] = meta.get("name")
+            except Exception:
+                pass
+
+    return SpatialResponse(success=True, data={
+        "query":                query,
+        "results":              results,
+        "total_scans_searched": len(all_scans),
+    })
+
+
+def _scan_summary(scan_id: str, graph: dict) -> str:
+    """One-line compact summary of a scan for LLM context."""
+    objects  = graph.get("objects", [])
+    room     = graph.get("room_size", {})
+    top_objs = ", ".join(
+        f"{o['label']} {round(o['confidence']*100)}%"
+        for o in sorted(objects, key=lambda x: x["confidence"], reverse=True)[:6]
+    )
+    dims = f"{room['width_m']}m×{room['depth_m']}m" if room else "?"
+    return f"{scan_id}: {len(objects)} objects ({top_objs}) | room {dims}"
+
+
+def _keyword_search(query: str, scans: list[tuple[str, dict]]) -> list[dict]:
+    """Fallback keyword matcher — counts overlapping label words."""
+    words = set(query.lower().split())
+    results = []
+    for scan_id, graph in scans:
+        labels = {o["label"].lower() for o in graph.get("objects", [])}
+        hits   = words & labels
+        # also check partial matches (query word is substring of a label)
+        partial = {w for w in words if any(w in lbl for lbl in labels)}
+        all_hits = hits | partial
+        if not all_hits:
+            continue
+        score = min(100, int(len(all_hits) / max(len(words), 1) * 100))
+        if score < 25:
+            continue
+        results.append({
+            "scan_id":        scan_id,
+            "score":          score,
+            "reason":         f"Contains: {', '.join(sorted(all_hits))}",
+            "preview_objects": sorted(all_hits)[:5],
+        })
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results[:10]
+
+
+async def _llm_search_rank(
+    query: str,
+    scans: list[tuple[str, dict]],
+    use_groq: bool = False,
+) -> list[dict]:
+    import asyncio
+    system_prompt = _load_prompt("spatial_search_v1.txt")
+    summaries     = "\n".join(_scan_summary(sid, g) for sid, g in scans)
+    user_msg      = f'Query: "{query}"\n\nScans:\n{summaries}'
+
+    if use_groq:
+        raw = await asyncio.to_thread(_call_groq, system_prompt, user_msg, 600)
+    else:
+        raw = await asyncio.to_thread(_call_claude, system_prompt, user_msg, 600)
+
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+
+    ranked = json.loads(raw)
+
+    # Decorate each result with preview_objects from the scene graph
+    graph_map = {sid: g for sid, g in scans}
+    out = []
+    for item in ranked:
+        sid   = item.get("scan_id", "")
+        graph = graph_map.get(sid, {})
+        objs  = [o["label"] for o in
+                 sorted(graph.get("objects", []), key=lambda x: x["confidence"], reverse=True)]
+        out.append({
+            "scan_id":        sid,
+            "score":          int(item.get("score", 0)),
+            "reason":         str(item.get("reason", "")),
+            "preview_objects": objs[:5],
+        })
+    return out
+
+
+async def _report(payload: dict) -> SpatialResponse:
+    """Generate an AI Spatial Report grounded on the scene graph. Caches to report.json."""
+    scan_id = payload.get("scan_id")
+    regen   = payload.get("regen", False)
+    if not scan_id:
+        return SpatialResponse(success=False, error="scan_id required")
+
+    graph_path = SCANS_DIR / scan_id / "scene_graph.json"
+    if not graph_path.exists():
+        return SpatialResponse(success=False, error=f"No scene graph for scan_id={scan_id}")
+
+    cache_path = SCANS_DIR / scan_id / "report.json"
+
+    if not regen and cache_path.exists():
+        try:
+            cached = json.loads(cache_path.read_text())
+            cached["cached"] = True
+            return SpatialResponse(success=True, data=cached)
+        except Exception:
+            pass
+
+    graph   = json.loads(graph_path.read_text())
+    objects = graph.get("objects", [])
+    room    = graph.get("room_size", {})
+    dists   = graph.get("distances", [])
+
+    llm = {"room_type": "Unknown", "overview": "", "insights": []}
+    try:
+        llm = await _llm_report(graph)
+    except Exception as e:
+        logger.warning("report LLM skipped: %s", e)
+
+    report = {
+        "scan_id":   scan_id,
+        "room_type": llm.get("room_type", "Unknown"),
+        "overview":  llm.get("overview", ""),
+        "insights":  llm.get("insights", []),
+        "metrics": {
+            "object_count":  len(objects),
+            "room_width_m":  room.get("width_m"),
+            "room_depth_m":  room.get("depth_m"),
+            "distance_pairs": len(dists),
+        },
+        "objects": [
+            {"label": o["label"], "confidence": round(o["confidence"], 3)}
+            for o in sorted(objects, key=lambda x: x["confidence"], reverse=True)
+        ],
+        "top_distances": dists[:6],
+        "cached": False,
+    }
+
+    try:
+        cache_path.write_text(json.dumps(report, indent=2))
+    except Exception:
+        pass
+
+    return SpatialResponse(success=True, data=report)
+
+
+async def _llm_report(scene_graph: dict) -> dict:
+    import asyncio
+    system_prompt = _load_prompt("spatial_report_v1.txt")
+
+    objects = scene_graph.get("objects", [])
+    dists   = scene_graph.get("distances", [])
+    room    = scene_graph.get("room_size", {})
+    room_line = (
+        f"{room['width_m']}m wide × {room['depth_m']}m deep" if room else "unknown dimensions"
+    )
+
+    obj_rows = []
+    for o in objects:
+        pos = o.get("position", {})
+        z   = f"{pos['z_m']}m" if pos.get("z_m") is not None else "?"
+        obj_rows.append(f"  {o['label']}: depth={z}, conf={o['confidence']:.2f}")
+
+    dist_rows = [
+        f"  {d['from']} ↔ {d['to']}: {d['distance_m']}m"
+        for d in dists[:10]
+    ]
+
+    user_msg = (
+        f"Room size: {room_line}\n"
+        f"Structure: {json.dumps(scene_graph.get('structure', {}))}\n\n"
+        f"Objects ({len(obj_rows)}):\n" + "\n".join(obj_rows) +
+        "\n\nKey distances:\n" + ("\n".join(dist_rows) if dist_rows else "  (no depth data)")
+    )
+
+    raw = ""
+    if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_key_here":
+        try:
+            raw = await asyncio.to_thread(_call_claude, system_prompt, user_msg, 800)
+        except Exception as e:
+            logger.warning("Claude report failed (%s) — trying Groq", e)
+
+    if not raw and GROQ_API_KEY and GROQ_API_KEY != "your_key_here":
+        raw = await asyncio.to_thread(_call_groq, system_prompt, user_msg, 800)
+
+    if not raw:
+        raise RuntimeError("No LLM available for report generation")
+
+    # Strip accidental markdown fences
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    return json.loads(raw)
+
+
 async def _status(payload: dict) -> SpatialResponse:
     scan_id = payload.get("scan_id")
     if not scan_id:
@@ -360,6 +611,55 @@ def _demo_scan_result() -> dict:
             "structure": {"walls": 4, "doors": [{"id": "door_001"}], "windows": [{"id": "win_001"}]},
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Rename — store human-readable name in meta.json
+# ---------------------------------------------------------------------------
+
+async def _rename(payload: dict) -> SpatialResponse:
+    scan_id = payload.get("scan_id")
+    name    = str(payload.get("name", "")).strip()
+    if not scan_id:
+        return SpatialResponse(success=False, error="scan_id required")
+    if not name:
+        return SpatialResponse(success=False, error="name required")
+
+    scan_dir  = SCANS_DIR / scan_id
+    if not scan_dir.exists():
+        return SpatialResponse(success=False, error=f"Scan not found: {scan_id}")
+
+    meta_path = scan_dir / "meta.json"
+    meta: dict = {}
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    meta["name"] = name
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+    return SpatialResponse(success=True, data={"scan_id": scan_id, "name": name})
+
+
+# ---------------------------------------------------------------------------
+# Delete — permanently remove a scan directory
+# ---------------------------------------------------------------------------
+
+async def _delete(payload: dict) -> SpatialResponse:
+    import shutil
+    scan_id = payload.get("scan_id")
+    if not scan_id:
+        return SpatialResponse(success=False, error="scan_id required")
+    if scan_id == "scan_001":
+        return SpatialResponse(success=False, error="Cannot delete the demo scan")
+
+    scan_dir = SCANS_DIR / scan_id
+    if not scan_dir.exists():
+        return SpatialResponse(success=False, error=f"Scan not found: {scan_id}")
+
+    shutil.rmtree(scan_dir)
+    return SpatialResponse(success=True, data={"scan_id": scan_id, "deleted": True})
 
 
 def _demo_diff_result() -> dict:

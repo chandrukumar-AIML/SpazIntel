@@ -8,10 +8,11 @@ interface Props {
   onOpenLive: () => void;
   onOpenGallery: () => void;
   onOpenObject: () => void;
+  onOpenSearch: () => void;
   onDemoMap: () => void;
 }
 
-export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGallery, onOpenObject, onDemoMap }: Props) {
+export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGallery, onOpenObject, onOpenSearch, onDemoMap }: Props) {
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -151,6 +152,9 @@ export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGal
       <div style={styles.existingRow}>
         <button style={styles.galleryBtn} onClick={onOpenGallery}>
           📂 My Scans
+        </button>
+        <button style={styles.galleryBtn} onClick={onOpenSearch}>
+          🔍 Search
         </button>
         <span style={{ color:"var(--text-3)" }}>·</span>
         <button style={styles.link} onClick={() => onScanStarted("scan_001")}>
