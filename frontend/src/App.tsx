@@ -32,6 +32,14 @@ export default function App() {
   const [leftMode,      setLeftMode]      = useState<LeftMode>("map");
   const [rightTab,      setRightTab]      = useState<RightTab>("chat");
   const [scanMode,      setScanMode]      = useState<ScanMode>("room");
+  const [mobilePanel,   setMobilePanel]   = useState<"none" | "chat" | "diff" | "report">("none");
+  const [isMobile,      setIsMobile]      = useState(() => window.innerWidth < 768);
+
+  useEffect(() => {
+    const fn = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
 
   // ── URL routing: ?scan=scan_id&embed=1 on load ───────────────────────────
   useEffect(() => {
@@ -167,7 +175,67 @@ export default function App() {
         </motion.div>
       )}
 
-      {view === "explore" && (
+      {view === "explore" && isMobile && (
+        <motion.div key="explore-mobile" style={styles.mobileRoot} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
+          {/* ── compact topbar ──────────────────────────────────────────────── */}
+          <div style={styles.mobileTopbar}>
+            <span style={styles.logoDot} />
+            <span style={styles.mobileBrand}>SpazIntel</span>
+            <span style={styles.mobileScanId}>{scanId}</span>
+            <button
+              style={styles.mobileIconBtn}
+              onClick={e => {
+                const url = `${window.location.origin}${window.location.pathname}?scan=${scanId}`;
+                navigator.clipboard.writeText(url).catch(() => {});
+                const btn = e.currentTarget; btn.textContent = "✓";
+                setTimeout(() => { btn.textContent = "🔗"; }, 1500);
+              }}
+            >🔗</button>
+            <button style={styles.mobileIconBtn} onClick={() => setView("gallery")}>⊞</button>
+          </div>
+
+          {/* ── viewer / panel area ─────────────────────────────────────────── */}
+          <div style={styles.mobileContent}>
+            {mobilePanel === "none" && leftMode === "map"   && <RoomMap scanId={scanId} />}
+            {mobilePanel === "none" && leftMode === "cloud" && <PointCloudViewer scanId={scanId} label="Point Cloud" />}
+            {mobilePanel === "none" && leftMode === "splat" && hasSplat && <SplatViewer splatUrl={splatUrl} />}
+            {mobilePanel === "none" && leftMode === "plan"  && <FloorPlanView scanId={scanId} />}
+            {mobilePanel === "chat"   && <ChatPanel scanId={scanId} />}
+            {mobilePanel === "diff"   && <DiffPanel currentScanId={scanId} />}
+            {mobilePanel === "report" && <ReportPanel scanId={scanId} />}
+          </div>
+
+          {/* ── bottom nav bar ──────────────────────────────────────────────── */}
+          <nav style={styles.bottomNav}>
+            {([
+              { key:"map",   icon:"⊞", label:"Map",    panel:"none" as const, mode:"map"   as LeftMode },
+              ...(hasPointCloud ? [{ key:"cloud", icon:"☁", label:"Cloud",  panel:"none" as const, mode:"cloud" as LeftMode }] : []),
+              ...(hasSplat      ? [{ key:"splat", icon:"✦", label:"3D",     panel:"none" as const, mode:"splat" as LeftMode }] : []),
+              { key:"chat",  icon:"💬", label:"Q&A",   panel:"chat"   as const, mode: null },
+              { key:"report",icon:"≡",  label:"Report", panel:"report" as const, mode: null },
+            ] as { key:string; icon:string; label:string; panel:"none"|"chat"|"diff"|"report"; mode:LeftMode|null }[]).map(t => {
+              const isActive = t.mode
+                ? mobilePanel === "none" && leftMode === t.mode
+                : mobilePanel === t.panel;
+              return (
+                <button
+                  key={t.key}
+                  style={{ ...styles.bottomTab, ...(isActive ? styles.bottomTabActive : {}) }}
+                  onClick={() => {
+                    setMobilePanel(t.panel);
+                    if (t.mode) setLeftMode(t.mode);
+                  }}
+                >
+                  <span style={styles.bottomTabIcon}>{t.icon}</span>
+                  <span style={styles.bottomTabLabel}>{t.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </motion.div>
+      )}
+
+      {view === "explore" && !isMobile && (
         <motion.div key="explore" style={styles.root} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}>
           <header style={styles.topbar}>
             <div style={styles.wordmark}>
@@ -272,4 +340,17 @@ const styles: Record<string, React.CSSProperties> = {
   tab:          { flex:1, padding:"6px 12px", border:"none", background:"transparent", color:"var(--text-3)", fontSize:12, fontWeight:600, borderRadius:"var(--radius)", cursor:"pointer", transition:"all 0.15s" },
   tabActive:    { color:"var(--text)", background:"var(--surface-2)" },
   panel:        { flex:1, minHeight:0, display:"flex", flexDirection:"column" },
+
+  // ── mobile layout ────────────────────────────────────────────────────────────
+  mobileRoot:       { position:"fixed", inset:0, display:"flex", flexDirection:"column", background:"var(--bg)", overflow:"hidden" },
+  mobileTopbar:     { height:44, flexShrink:0, borderBottom:"1px solid var(--border)", background:"var(--surface)", display:"flex", alignItems:"center", gap:8, padding:"0 12px" },
+  mobileBrand:      { fontWeight:700, fontSize:14, letterSpacing:"-.01em" },
+  mobileScanId:     { flex:1, fontSize:10, color:"var(--text-3)", fontFamily:"monospace", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const },
+  mobileIconBtn:    { background:"transparent", border:"none", color:"var(--text-2)", fontSize:16, cursor:"pointer", padding:"4px 6px", borderRadius:"var(--radius)", flexShrink:0 },
+  mobileContent:    { flex:1, minHeight:0, height:0, overflow:"hidden", position:"relative" },
+  bottomNav:        { height:60, flexShrink:0, borderTop:"2px solid rgba(99,102,241,.25)", background:"#141414", display:"flex", alignItems:"stretch", paddingBottom:"env(safe-area-inset-bottom)", zIndex:30 },
+  bottomTab:        { flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:3, background:"transparent", border:"none", cursor:"pointer", padding:"6px 0 4px", transition:"all .15s" },
+  bottomTabActive:  { background:"rgba(99,102,241,.18)", borderTop:"2px solid #6366f1" },
+  bottomTabIcon:    { fontSize:22, lineHeight:1 },
+  bottomTabLabel:   { fontSize:10, fontWeight:700, color:"rgba(255,255,255,.5)", letterSpacing:".03em" },
 };
