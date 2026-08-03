@@ -93,7 +93,6 @@ def train_splat(
     """
     import torch
     import numpy as np
-    from gsplat import rasterization
 
     frames_dir = Path(frames_dir)
     sparse_dir = Path(sparse_dir)
@@ -102,6 +101,23 @@ def train_splat(
 
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA not available — gsplat requires a GPU.")
+
+    # gsplat needs nvcc (CUDA Toolkit) to compile its CUDA extension at install time.
+    # PyTorch's bundled CUDA runtime (cudart) is NOT enough.
+    # Fix: install CUDA Toolkit 12.1 from developer.nvidia.com, then: pip install gsplat --no-cache-dir
+    try:
+        from gsplat.cuda._backend import _C as _gsplat_C
+    except ImportError:
+        _gsplat_C = None
+    if _gsplat_C is None:
+        raise RuntimeError(
+            "gsplat CUDA extension not compiled (_C is None). "
+            "You have PyTorch CUDA runtime but NOT the CUDA Toolkit (nvcc). "
+            "Install CUDA Toolkit 12.1 from developer.nvidia.com/cuda-12-1-0-download-archive "
+            "then run: pip install gsplat --no-cache-dir"
+        )
+
+    from gsplat import rasterization
 
     device = torch.device("cuda")
     logger.info("gsplat training on %s, max_steps=%d", device, max_steps)
