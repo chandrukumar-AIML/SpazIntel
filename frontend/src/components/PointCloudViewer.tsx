@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
+import { WalkthroughViewer } from "./WalkthroughViewer";
 
 interface Props {
   scanId: string;
@@ -159,9 +160,10 @@ export function PointCloudViewer({ scanId, label }: Props) {
   const rafRef     = useRef(0);
   const orbitRef   = useRef({ az: 0.4, el: 0.25, r: 2.5, drag: false, lx: 0, ly: 0 });
 
-  const [status,     setStatus]     = useState<Status>("loading");
-  const [pointCount, setPointCount] = useState(0);
-  const [errMsg,     setErrMsg]     = useState("");
+  const [status,         setStatus]         = useState<Status>("loading");
+  const [pointCount,     setPointCount]     = useState(0);
+  const [errMsg,         setErrMsg]         = useState("");
+  const [showWalkthrough, setShowWalkthrough] = useState(false);
 
   // ── fetch + init ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -341,6 +343,18 @@ export function PointCloudViewer({ scanId, label }: Props) {
       {status === "ok" && (
         <div style={s.hint}>drag to orbit · scroll to zoom</div>
       )}
+
+      {/* Enter Room button */}
+      {status === "ok" && (
+        <button style={s.walkBtn} onClick={() => setShowWalkthrough(true)}>
+          🚶 Enter Room
+        </button>
+      )}
+
+      {/* Walkthrough full-screen overlay */}
+      {showWalkthrough && (
+        <WalkthroughViewer scanId={scanId} onExit={() => setShowWalkthrough(false)} />
+      )}
     </div>
   );
 }
@@ -356,4 +370,5 @@ const s: Record<string, React.CSSProperties> = {
   ovText:  { fontSize: 14, color: "rgba(255,255,255,.8)", fontWeight: 500 },
   ovHint:  { fontSize: 12, color: "rgba(255,255,255,.4)" },
   hint:    { position: "absolute", bottom: 10, left: "50%", transform: "translateX(-50%)", fontSize: 10, color: "rgba(255,255,255,.3)", whiteSpace: "nowrap", pointerEvents: "none" },
+  walkBtn: { position: "absolute", bottom: 36, right: 12, background: "rgba(99,102,241,.85)", backdropFilter: "blur(6px)", border: "1px solid rgba(99,102,241,.6)", color: "#fff", borderRadius: 20, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: ".02em", zIndex: 10 },
 };
