@@ -93,11 +93,20 @@ def _run_dust3r(image_paths: list[str], output_dir: Path) -> dict:
     scene = global_aligner(output, device=device, mode=GlobalAlignerMode.PointCloudOptimizer)
     scene.compute_global_alignment(init="mst", niter=300, schedule="cosine", lr=0.01)
 
-    pts3d  = scene.get_pts3d()   # list of (H, W, 3) float arrays
-    colors = scene.get_rgb()     # list of (H, W, 3) float arrays in [0, 1]
+    import torch
+    pts3d  = scene.get_pts3d()   # list of (H, W, 3) tensors
+    masks  = scene.get_masks()   # list of (H, W) bool tensors — valid 3D points only
+    colors = scene.imgs          # list of (H, W, 3) numpy float32 arrays in [0, 1]
 
-    all_pts = np.concatenate([p.reshape(-1, 3) for p in pts3d],  axis=0).astype(np.float32)
-    all_rgb = np.concatenate([c.reshape(-1, 3) for c in colors], axis=0).astype(np.float32)
+    all_pts, all_rgb = [], []
+    for pt, col, mask in zip(pts3d, colors, masks):
+        if isinstance(pt,   torch.Tensor): pt   = pt.detach().cpu().numpy()
+        if isinstance(mask, torch.Tensor): mask = mask.cpu().numpy().astype(bool)
+        all_pts.append(pt[mask])
+        all_rgb.append(col[mask])
+
+    all_pts = np.concatenate(all_pts, axis=0).astype(np.float32)
+    all_rgb = np.concatenate(all_rgb, axis=0).astype(np.float32)
 
     if len(all_pts) > MAX_POINTS:
         idx     = np.random.choice(len(all_pts), MAX_POINTS, replace=False)
