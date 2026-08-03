@@ -1,16 +1,19 @@
 """
 Fast 3D reconstruction engine — Stage 1 of 2.
 
-Primary:  DUSt3R/MASt3R — 6 photos → dense colored point cloud in ~30s on RTX 4050.
+Primary:  DUSt3R — 6-12 photos → dense colored point cloud in ~30s on RTX 4050.
+          Pre-trained transformer; no per-scene training needed.
 Fallback: COLMAP sparse point cloud after SfM runs.
 
-Install DUSt3R for the 30-second experience:
-    pip install dust3r
-    # or the improved MASt3R:
-    pip install mast3r
+DUSt3R is a research repo (no PyPI wheel). Installed at:
+    git clone --recursive https://github.com/naver/dust3r C:/Users/kumar/models/dust3r
+    pip install roma einops trimesh "huggingface-hub[torch]>=0.22"
+Set DUST3R_DIR=C:/Users/kumar/models/dust3r in .env.
 """
 import logging
+import os
 import struct
+import sys
 import time
 from pathlib import Path
 
@@ -21,8 +24,23 @@ logger = logging.getLogger(__name__)
 DUST3R_MODEL = "naver/DUSt3R_ViTLarge_BaseDecoder_512_dpt"
 MAX_POINTS = 200_000  # cap for browser rendering
 
+_DUST3R_DIR = os.getenv("DUST3R_DIR", "")
+
+
+def _inject_dust3r_path() -> bool:
+    """Add DUSt3R repo to sys.path if DUST3R_DIR is set and the repo exists."""
+    if not _DUST3R_DIR:
+        return False
+    p = Path(_DUST3R_DIR)
+    if not (p / "dust3r").is_dir():
+        return False
+    if str(p) not in sys.path:
+        sys.path.insert(0, str(p))
+    return True
+
 
 def dust3r_available() -> bool:
+    _inject_dust3r_path()
     try:
         import dust3r  # noqa: F401
         return True
@@ -51,6 +69,7 @@ def run_fast_reconstruction(image_paths: list[str], output_dir: str) -> dict:
 
 
 def _run_dust3r(image_paths: list[str], output_dir: Path) -> dict:
+    _inject_dust3r_path()
     import torch
     from dust3r.inference import inference
     from dust3r.model import AsymmetricCroCo3DStereo
