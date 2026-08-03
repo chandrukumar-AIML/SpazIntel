@@ -26,5 +26,5 @@ PROMPT_CHANGE_DETECT_VERSION = "v1.0"
 
 # LLM fallback chain
 # Chain: Claude (cloud) → Groq free tier → error
-LLM_PRIMARY        = "claude-sonnet-5-20251101"      # needs ANTHROPIC_API_KEY
+LLM_PRIMARY        = "claude-sonnet-5"                # needs ANTHROPIC_API_KEY
 LLM_GROQ_MODEL     = "llama-3.1-8b-instant"          # Groq free tier, needs GROQ_API_KEY
