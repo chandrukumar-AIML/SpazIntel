@@ -40,6 +40,42 @@ async def health():
     return {"status": "ok", "version": "0.1.0", "service": "atlas-spatial"}
 
 
+@app.get("/api/health/keys")
+async def key_status():
+    """Returns which LLM keys are configured (without revealing the values)."""
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+    groq_key      = os.getenv("GROQ_API_KEY", "")
+    return {
+        "anthropic": bool(anthropic_key and anthropic_key != "your_key_here"),
+        "groq":      bool(groq_key and groq_key != "your_key_here"),
+    }
+
+
+@app.get("/api/stream/query")
+async def stream_query(scan_id: str, question: str):
+    """SSE endpoint — streams Q&A answer token by token from Claude (or Groq fallback)."""
+    import json as _json
+    from fastapi.responses import StreamingResponse
+
+    async def event_gen():
+        try:
+            async for chunk in spatial_impl.query_stream(scan_id, question):
+                yield f"data: {_json.dumps({'text': chunk})}\n\n"
+        except Exception as e:
+            yield f"data: {_json.dumps({'error': str(e)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
 @app.post("/api/spatial/action", response_model=SpatialResponse)
 async def spatial_action(req: SpatialRequest):
     if req.action not in VALID_ACTIONS:

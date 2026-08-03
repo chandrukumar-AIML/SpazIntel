@@ -2,15 +2,15 @@ import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../lib/api";
 
-interface Message { role: "user" | "ai"; text: string; }
+interface Message { role: "user" | "ai"; text: string; streaming?: boolean; }
 
 const CHIPS = [
   "What furniture is in this room?",
   "How big is this room?",
-  "What's closest to the door?",
+  "What's closest to the desk?",
   "Are there any safety hazards?",
   "Count all the objects",
-  "What changed since my last scan?",
+  "How far is the sofa from the TV?",
 ];
 
 interface Props { scanId: string }
@@ -27,7 +27,9 @@ function loadHistory(scanId: string): Message[] {
 
 function saveHistory(scanId: string, messages: Message[]) {
   try {
-    localStorage.setItem(storageKey(scanId), JSON.stringify(messages));
+    // Don't persist streaming flag
+    const clean = messages.map(({ streaming: _, ...m }) => m);
+    localStorage.setItem(storageKey(scanId), JSON.stringify(clean));
   } catch {}
 }
 
@@ -39,9 +41,13 @@ export function ChatPanel({ scanId }: Props) {
   });
   const [input,   setInput]   = useState("");
   const [loading, setLoading] = useState(false);
+  const [keyOk,   setKeyOk]   = useState<boolean | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Reload history when scanId changes
+  useEffect(() => {
+    api.keyStatus().then(s => setKeyOk(s.anthropic || s.groq)).catch(() => setKeyOk(false));
+  }, []);
+
   useEffect(() => {
     const history = loadHistory(scanId);
     if (history.length > 0) {
@@ -51,7 +57,6 @@ export function ChatPanel({ scanId }: Props) {
     }
   }, [scanId]);
 
-  // Persist every message change
   useEffect(() => {
     saveHistory(scanId, messages);
   }, [scanId, messages]);
@@ -64,22 +69,42 @@ export function ChatPanel({ scanId }: Props) {
     const q = (text ?? input).trim();
     if (!q || loading) return;
     setInput("");
-    const next: Message[] = [...messages, { role: "user", text: q }];
-    setMessages(next);
     setLoading(true);
-    try {
-      const res = await api.query(scanId, q);
-      setMessages(m => [...m, { role: "ai", text: res.answer }]);
-    } catch (e: unknown) {
-      const raw = e instanceof Error ? e.message : "Error";
-      const isKey = /api.?key|authentication|invalid.?key|401/i.test(raw);
-      const msg = isKey
-        ? "Q&A needs an Anthropic API key. Add ANTHROPIC_API_KEY=sk-... to your .env and restart the backend."
-        : `Error: ${raw}`;
-      setMessages(m => [...m, { role: "ai", text: msg }]);
-    } finally {
-      setLoading(false);
-    }
+    // Append user message + empty streaming AI bubble
+    setMessages(m => [...m, { role: "user", text: q }, { role: "ai", text: "", streaming: true }]);
+
+    await api.queryStream(
+      scanId,
+      q,
+      (chunk) => {
+        setMessages(m => {
+          const copy = [...m];
+          const last = copy[copy.length - 1];
+          copy[copy.length - 1] = { ...last, text: last.text + chunk };
+          return copy;
+        });
+      },
+      () => {
+        setMessages(m => {
+          const copy = [...m];
+          copy[copy.length - 1] = { ...copy[copy.length - 1], streaming: false };
+          return copy;
+        });
+        setLoading(false);
+      },
+      (err) => {
+        const isKey = /api.?key|authentication|no llm|your_key_here/i.test(err);
+        const msg = isKey
+          ? "Q&A needs an API key. Add ANTHROPIC_API_KEY=sk-... to your .env and restart the backend."
+          : `Error: ${err}`;
+        setMessages(m => {
+          const copy = [...m];
+          copy[copy.length - 1] = { role: "ai", text: msg, streaming: false };
+          return copy;
+        });
+        setLoading(false);
+      },
+    );
   }
 
   function clearHistory() {
@@ -92,8 +117,11 @@ export function ChatPanel({ scanId }: Props) {
   return (
     <div style={s.wrap}>
       <div style={s.header}>
-        <span style={s.headerDot} />
+        <span style={{ ...s.headerDot, background: keyOk === true ? "var(--success)" : keyOk === false ? "var(--error, #ef4444)" : "var(--text-3)" }} />
         Spatial Q&amp;A
+        {keyOk === false && (
+          <span style={s.keyWarning} title="Set ANTHROPIC_API_KEY or GROQ_API_KEY in .env">no key</span>
+        )}
         <span style={s.badge}>{scanId}</span>
         {messages.length > 1 && (
           <button style={s.clearBtn} onClick={clearHistory} title="Clear chat history">↺</button>
@@ -110,10 +138,13 @@ export function ChatPanel({ scanId }: Props) {
               transition={{ duration: 0.2 }}
               style={{ ...s.bubble, ...(m.role === "user" ? s.userBubble : s.aiBubble) }}
             >
-              {m.text}
+              {m.text || (m.streaming ? null : "")}
+              {m.streaming && (
+                <span style={s.cursor} />
+              )}
             </motion.div>
           ))}
-          {loading && (
+          {loading && messages[messages.length - 1]?.streaming === false && (
             <motion.div key="typing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={s.aiBubble}>
               <span style={s.dots}>
                 {[0,1,2].map(i => <span key={i} style={{ ...s.dot, animationDelay: `${i * 0.15}s` }} />)}
@@ -144,7 +175,7 @@ export function ChatPanel({ scanId }: Props) {
           disabled={loading}
         />
         <button style={s.btn} onClick={() => send()} disabled={loading || !input.trim()}>
-          Send
+          {loading ? "…" : "Send"}
         </button>
       </div>
     </div>
@@ -152,20 +183,22 @@ export function ChatPanel({ scanId }: Props) {
 }
 
 const s: Record<string, React.CSSProperties> = {
-  wrap:      { display:"flex", flexDirection:"column", height:"100%", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow:"hidden" },
-  header:    { display:"flex", alignItems:"center", gap:8, padding:"12px 16px", borderBottom:"1px solid var(--border)", fontSize:13, fontWeight:600 },
-  headerDot: { width:8, height:8, borderRadius:"50%", background:"var(--success)" },
-  badge:     { marginLeft:"auto", fontSize:11, color:"var(--text-3)", fontFamily:"monospace" },
-  clearBtn:  { background:"none", border:"none", color:"var(--text-3)", cursor:"pointer", fontSize:16, lineHeight:1, padding:"0 0 0 8px", marginLeft:4 },
-  messages:  { flex:1, overflowY:"auto", padding:"16px", display:"flex", flexDirection:"column", gap:10 },
-  bubble:    { maxWidth:"85%", padding:"10px 14px", borderRadius:10, fontSize:13, lineHeight:1.5 },
-  userBubble:{ alignSelf:"flex-end", background:"var(--accent)", color:"#fff", borderBottomRightRadius:2 },
-  aiBubble:  { alignSelf:"flex-start", background:"var(--surface-2)", color:"var(--text)", borderBottomLeftRadius:2 },
-  dots:      { display:"flex", gap:4, padding:"2px 0" },
-  dot:       { width:6, height:6, borderRadius:"50%", background:"var(--text-3)", animation:"pulse 1s ease-in-out infinite" },
-  chips:     { display:"flex", flexWrap:"wrap" as const, gap:6, padding:"0 16px 10px" },
-  chip:      { background:"var(--surface-2)", border:"1px solid var(--border)", color:"var(--text-2)", borderRadius:20, padding:"5px 12px", fontSize:11, cursor:"pointer", whiteSpace:"nowrap" as const, textAlign:"left" as const },
-  inputRow:  { display:"flex", gap:8, padding:"12px 16px", borderTop:"1px solid var(--border)" },
-  input:     { flex:1, background:"var(--surface-2)", border:"1px solid var(--border)", borderRadius:"var(--radius)", padding:"8px 12px", color:"var(--text)", fontSize:13, outline:"none" },
-  btn:       { background:"var(--accent)", color:"#fff", border:"none", borderRadius:"var(--radius)", padding:"8px 16px", fontSize:13, fontWeight:600, cursor:"pointer" },
+  wrap:       { display:"flex", flexDirection:"column", height:"100%", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow:"hidden" },
+  header:     { display:"flex", alignItems:"center", gap:8, padding:"12px 16px", borderBottom:"1px solid var(--border)", fontSize:13, fontWeight:600 },
+  headerDot:  { width:8, height:8, borderRadius:"50%", background:"var(--success)", flexShrink:0 },
+  keyWarning: { fontSize:10, background:"rgba(239,68,68,.15)", color:"#ef4444", borderRadius:4, padding:"2px 6px", border:"1px solid rgba(239,68,68,.3)" },
+  badge:      { marginLeft:"auto", fontSize:11, color:"var(--text-3)", fontFamily:"monospace" },
+  clearBtn:   { background:"none", border:"none", color:"var(--text-3)", cursor:"pointer", fontSize:16, lineHeight:1, padding:"0 0 0 8px", marginLeft:4 },
+  messages:   { flex:1, overflowY:"auto", padding:"16px", display:"flex", flexDirection:"column", gap:10 },
+  bubble:     { maxWidth:"85%", padding:"10px 14px", borderRadius:10, fontSize:13, lineHeight:1.5, wordBreak:"break-word" as const },
+  userBubble: { alignSelf:"flex-end", background:"var(--accent)", color:"#fff", borderBottomRightRadius:2 },
+  aiBubble:   { alignSelf:"flex-start", background:"var(--surface-2)", color:"var(--text)", borderBottomLeftRadius:2 },
+  cursor:     { display:"inline-block", width:2, height:"1em", background:"var(--accent)", marginLeft:2, verticalAlign:"text-bottom", animation:"blink 1s step-end infinite" },
+  dots:       { display:"flex", gap:4, padding:"2px 0" },
+  dot:        { width:6, height:6, borderRadius:"50%", background:"var(--text-3)", animation:"pulse 1s ease-in-out infinite" },
+  chips:      { display:"flex", flexWrap:"wrap" as const, gap:6, padding:"0 16px 10px" },
+  chip:       { background:"var(--surface-2)", border:"1px solid var(--border)", color:"var(--text-2)", borderRadius:20, padding:"5px 12px", fontSize:11, cursor:"pointer", whiteSpace:"nowrap" as const, textAlign:"left" as const },
+  inputRow:   { display:"flex", gap:8, padding:"12px 16px", borderTop:"1px solid var(--border)" },
+  input:      { flex:1, background:"var(--surface-2)", border:"1px solid var(--border)", borderRadius:"var(--radius)", padding:"8px 12px", color:"var(--text)", fontSize:13, outline:"none" },
+  btn:        { background:"var(--accent)", color:"#fff", border:"none", borderRadius:"var(--radius)", padding:"8px 16px", fontSize:13, fontWeight:600, cursor:"pointer", minWidth:56 },
 };

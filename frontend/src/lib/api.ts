@@ -16,6 +16,44 @@ export const api = {
   query: (scan_id: string, question: string) =>
     action<{ answer: string; prompt_version?: string }>("query", { scan_id, question }),
 
+  queryStream: async (
+    scan_id: string,
+    question: string,
+    onChunk: (text: string) => void,
+    onDone: () => void,
+    onError: (err: string) => void,
+  ): Promise<void> => {
+    try {
+      const params = new URLSearchParams({ scan_id, question });
+      const res = await fetch(`${BASE}/api/stream/query?${params}`);
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6);
+          if (data === "[DONE]") { onDone(); return; }
+          const parsed = JSON.parse(data);
+          if (parsed.error) { onError(parsed.error); return; }
+          if (parsed.text) onChunk(parsed.text);
+        }
+      }
+      onDone();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Stream error");
+    }
+  },
+
+  keyStatus: (): Promise<{ anthropic: boolean; groq: boolean }> =>
+    fetch(`${BASE}/api/health/keys`).then(r => r.json()),
+
   diff: (scan_id_a: string, scan_id_b: string) =>
     action<DiffResult>("diff", { scan_id_a, scan_id_b }),
 

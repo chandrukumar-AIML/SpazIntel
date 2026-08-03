@@ -199,6 +199,78 @@ def _call_claude(system_prompt: str, user_msg: str, max_tokens: int = 512) -> st
     return msg.content[0].text
 
 
+def _build_qa_context(scene_graph: dict, question: str) -> tuple[str, str]:
+    """Return (system_prompt, user_msg) for Q&A — shared by streaming and non-streaming paths."""
+    system_prompt = _load_prompt("spatial_qa_v2.txt")
+
+    obj_rows = []
+    for o in scene_graph.get("objects", []):
+        pos = o.get("position", {})
+        z   = f"{pos['z_m']}m" if pos.get("z_m") is not None else "?"
+        wx  = o.get("world_x_m")
+        wy  = o.get("world_y_m")
+        coords = f"({wx},{wy})" if wx is not None else "?"
+        obj_rows.append(f"  {o['label']}: depth={z}, world_xy={coords}m, conf={o['confidence']}")
+
+    dist_rows = [
+        f"  {d['from']} ↔ {d['to']}: {d['distance_m']}m"
+        for d in scene_graph.get("distances", [])[:15]
+    ]
+
+    room = scene_graph.get("room_size", {})
+    room_line = f"{room['width_m']}m wide × {room['depth_m']}m deep" if room else "unknown"
+
+    user_msg = (
+        f"Objects ({len(obj_rows)}):\n" + "\n".join(obj_rows) +
+        "\n\nDistances (closest first):\n" + ("\n".join(dist_rows) if dist_rows else "  (no depth data)") +
+        f"\n\nRoom size: {room_line}" +
+        f"\n\nStructure: {json.dumps(scene_graph.get('structure', {}))}" +
+        f"\n\nQuestion: {question}"
+    )
+    return system_prompt, user_msg
+
+
+async def query_stream(scan_id: str, question: str):
+    """Async generator yielding text chunks for SSE streaming.
+    Falls back to Groq (yields full response at once) or error message."""
+    graph_path = SCANS_DIR / scan_id / "scene_graph.json"
+    if not graph_path.exists():
+        yield f"No scene graph found for {scan_id}. Run a scan first."
+        return
+
+    scene_graph = json.loads(graph_path.read_text())
+    system_prompt, user_msg = _build_qa_context(scene_graph, question)
+
+    if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_key_here":
+        import anthropic
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        try:
+            with client.messages.stream(
+                model=LLM_PRIMARY,
+                max_tokens=512,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_msg}],
+            ) as stream:
+                logger.info("llm=claude stream model=%s scan=%s", LLM_PRIMARY, scan_id)
+                for text in stream.text_stream:
+                    yield text
+            return
+        except Exception as e:
+            logger.warning("Claude stream failed (%s) — Groq fallback", e)
+
+    if GROQ_API_KEY and GROQ_API_KEY != "your_key_here":
+        try:
+            import asyncio
+            result = await asyncio.to_thread(_call_groq, system_prompt, user_msg)
+            yield result
+            return
+        except Exception as e:
+            yield f"Error: {e}"
+            return
+
+    yield "No LLM available. Add ANTHROPIC_API_KEY or GROQ_API_KEY to your .env and restart the backend."
+
+
 def _call_groq(system_prompt: str, user_msg: str, max_tokens: int = 512) -> str:
     from groq import Groq
     client = Groq(api_key=GROQ_API_KEY)
