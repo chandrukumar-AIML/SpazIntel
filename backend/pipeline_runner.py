@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 # scan_id → { status, step, frames_count, objects_found, error, has_splat }
 _jobs: dict[str, dict] = {}
+_lock = threading.Lock()
 
 # Engine path — file-relative so it works regardless of CWD
 _engines_dir = Path(__file__).parent.parent / "engines"
@@ -31,16 +32,17 @@ _SPLAT_STEPS  = int(os.getenv("SPLAT_STEPS", "3000"))
 
 
 def start(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool, mode: str = "room") -> None:
-    _jobs[scan_id] = {
-        "status": "queued",
-        "step": "Queued",
-        "frames_count": 0,
-        "objects_found": 0,
-        "has_splat": False,
-        "has_pointcloud": False,
-        "error": None,
-        "mode": mode,
-    }
+    with _lock:
+        _jobs[scan_id] = {
+            "status": "queued",
+            "step": "Queued",
+            "frames_count": 0,
+            "objects_found": 0,
+            "has_splat": False,
+            "has_pointcloud": False,
+            "error": None,
+            "mode": mode,
+        }
     t = threading.Thread(
         target=_run,
         args=(scan_id, upload_dir, scan_dir, is_video, mode),
@@ -50,11 +52,15 @@ def start(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool, mode: 
 
 
 def get(scan_id: str) -> dict | None:
-    return _jobs.get(scan_id)
+    with _lock:
+        job = _jobs.get(scan_id)
+        return dict(job) if job is not None else None
 
 
 def _set(scan_id: str, **kwargs) -> None:
-    _jobs[scan_id].update(kwargs)
+    with _lock:
+        if scan_id in _jobs:
+            _jobs[scan_id].update(kwargs)
 
 
 def _run(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool, mode: str = "room") -> None:
@@ -130,7 +136,7 @@ def _run(scan_id: str, upload_dir: Path, scan_dir: Path, is_video: bool, mode: s
 
                 # ── Step 5: gsplat training ───────────────────────────────
                 # COLMAP sparse point cloud fallback (when DUSt3R not installed)
-                if not _jobs[scan_id].get("has_pointcloud", False) and colmap_stats.get("points3D", 0) > 50:
+                if not get(scan_id).get("has_pointcloud", False) and colmap_stats.get("points3D", 0) > 50:
                     try:
                         from rce.reconstruct_fast import extract_colmap_pointcloud
                         pc_dir    = scan_dir / "pointcloud"

@@ -14,7 +14,7 @@ from models import SpatialResponse
 from constants import (
     ACTION_SCAN, ACTION_QUERY, ACTION_DIFF, ACTION_STATUS, ACTION_SCENE_GRAPH, ACTION_MEASURE, ACTION_REPORT, ACTION_SEARCH,
     ACTION_RENAME, ACTION_DELETE,
-    LLM_PRIMARY, LLM_GROQ_MODEL, PROMPT_SPATIAL_QA_VERSION,
+    LLM_PRIMARY, LLM_GROQ_MODEL, LLM_GEMINI_MODEL, LLM_OPENAI_MODEL, PROMPT_SPATIAL_QA_VERSION,
 )
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,8 @@ _DEFAULT_SCANS = str(Path(__file__).parent.parent / "data" / "scans")
 SCANS_DIR = Path(os.getenv("SCANS_DIR", _DEFAULT_SCANS))
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 GROQ_API_KEY      = os.getenv("GROQ_API_KEY", "")
+GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY", "")
+OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")
 OLLAMA_BASE_URL   = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL      = os.getenv("OLLAMA_MODEL", "llama3.2")
 
@@ -112,7 +114,7 @@ async def _scan(payload: dict) -> SpatialResponse:
 async def _query(payload: dict) -> SpatialResponse:
     if DEMO_MODE:
         return SpatialResponse(success=True, data={
-            "answer": "The blue chair is near the window, about 2m from the desk.",
+            "answer": "The workbench is at the south end of the factory floor, approximately 3.2m from the machine. The fire extinguisher is near the exit door at 1.8m depth. Safety cabinet is 4.1m from the workbench.",
             "source": "demo_scene_graph",
         })
 
@@ -137,12 +139,7 @@ async def _query(payload: dict) -> SpatialResponse:
 
 
 async def _llm_query(question: str, scene_graph: dict) -> str:
-    """
-    LLM fallback chain:
-      1. Claude via Anthropic API  (if ANTHROPIC_API_KEY is set)
-      2. Groq free tier            (if GROQ_API_KEY is set)
-      3. Error — at least one key required
-    """
+    """LLM fallback chain: Claude → Groq → Gemini → OpenAI → Ollama"""
     import asyncio
     system_prompt = _load_prompt("spatial_qa_v2.txt")
 
@@ -231,8 +228,8 @@ async def query_stream(scan_id: str, question: str):
     system_prompt, user_msg = _build_qa_context(scene_graph, question)
 
     if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_key_here":
-        import anthropic
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         try:
             with client.messages.stream(
                 model=LLM_PRIMARY,
@@ -244,7 +241,7 @@ async def query_stream(scan_id: str, question: str):
                 for text in stream.text_stream:
                     yield text
             return
-        except Exception as e:
+        except _anthropic.APIError as e:
             logger.warning("Claude stream failed (%s) — Groq fallback", e)
 
     if GROQ_API_KEY and GROQ_API_KEY != "your_key_here":
@@ -254,7 +251,25 @@ async def query_stream(scan_id: str, question: str):
             yield result
             return
         except Exception as e:
-            logger.warning("Groq stream failed (%s) — Ollama fallback", e)
+            logger.warning("Groq stream failed (%s) — Gemini fallback", e)
+
+    if GEMINI_API_KEY and GEMINI_API_KEY != "your_key_here":
+        try:
+            import asyncio
+            result = await asyncio.to_thread(_call_gemini, system_prompt, user_msg)
+            yield result
+            return
+        except Exception as e:
+            logger.warning("Gemini stream failed (%s) — OpenAI fallback", e)
+
+    if OPENAI_API_KEY and OPENAI_API_KEY != "your_key_here":
+        try:
+            import asyncio
+            result = await asyncio.to_thread(_call_openai, system_prompt, user_msg)
+            yield result
+            return
+        except Exception as e:
+            logger.warning("OpenAI stream failed (%s) — Ollama fallback", e)
 
     if OLLAMA_BASE_URL:
         try:
@@ -266,7 +281,11 @@ async def query_stream(scan_id: str, question: str):
             yield f"Error: {e}"
             return
 
-    yield "No LLM available. Add ANTHROPIC_API_KEY, GROQ_API_KEY, or run Ollama locally."
+    if DEMO_MODE:
+        yield "The workbench is at the south end of the factory floor, approximately 3.2m from the machine. Safety cabinet is near the exit at 1.8m depth."
+        return
+
+    yield "No LLM available. Add ANTHROPIC_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or run Ollama locally."
 
 
 def _call_groq(system_prompt: str, user_msg: str, max_tokens: int = 512) -> str:
@@ -281,6 +300,36 @@ def _call_groq(system_prompt: str, user_msg: str, max_tokens: int = 512) -> str:
         ],
     )
     logger.info("llm=groq model=%s", LLM_GROQ_MODEL)
+    return resp.choices[0].message.content
+
+
+def _call_gemini(system_prompt: str, user_msg: str, max_tokens: int = 512) -> str:
+    import google.generativeai as genai
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel(
+        LLM_GEMINI_MODEL,
+        system_instruction=system_prompt,
+    )
+    resp = model.generate_content(
+        user_msg,
+        generation_config=genai.GenerationConfig(max_output_tokens=max_tokens),
+    )
+    logger.info("llm=gemini model=%s", LLM_GEMINI_MODEL)
+    return resp.text
+
+
+def _call_openai(system_prompt: str, user_msg: str, max_tokens: int = 512) -> str:
+    from openai import OpenAI
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    resp = client.chat.completions.create(
+        model=LLM_OPENAI_MODEL,
+        max_tokens=max_tokens,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_msg},
+        ],
+    )
+    logger.info("llm=openai model=%s", LLM_OPENAI_MODEL)
     return resp.choices[0].message.content
 
 
@@ -306,20 +355,33 @@ def _call_ollama(system_prompt: str, user_msg: str, max_tokens: int = 512) -> st
 
 
 async def _call_llm_chain(system_prompt: str, user_msg: str, max_tokens: int = 512) -> str:
-    """Claude → Groq → Ollama fallback chain. Tries each in order until one succeeds."""
+    """Claude → Groq → Gemini → OpenAI → Ollama → DEMO_MODE canned response."""
     import asyncio
+    import anthropic as _anthropic
 
     if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_key_here":
         try:
             return await asyncio.to_thread(_call_claude, system_prompt, user_msg, max_tokens)
-        except Exception as e:
+        except _anthropic.APIError as e:
             logger.warning("Claude failed (%s) — trying Groq", e)
 
     if GROQ_API_KEY and GROQ_API_KEY != "your_key_here":
         try:
             return await asyncio.to_thread(_call_groq, system_prompt, user_msg, max_tokens)
         except Exception as e:
-            logger.warning("Groq failed (%s) — trying Ollama", e)
+            logger.warning("Groq failed (%s) — trying Gemini", e)
+
+    if GEMINI_API_KEY and GEMINI_API_KEY != "your_key_here":
+        try:
+            return await asyncio.to_thread(_call_gemini, system_prompt, user_msg, max_tokens)
+        except Exception as e:
+            logger.warning("Gemini failed (%s) — trying OpenAI", e)
+
+    if OPENAI_API_KEY and OPENAI_API_KEY != "your_key_here":
+        try:
+            return await asyncio.to_thread(_call_openai, system_prompt, user_msg, max_tokens)
+        except Exception as e:
+            logger.warning("OpenAI failed (%s) — trying Ollama", e)
 
     if OLLAMA_BASE_URL:
         try:
@@ -327,7 +389,7 @@ async def _call_llm_chain(system_prompt: str, user_msg: str, max_tokens: int = 5
         except Exception as e:
             raise RuntimeError(f"All LLM providers failed. Last: {e}") from e
 
-    raise RuntimeError("No LLM available. Set ANTHROPIC_API_KEY, GROQ_API_KEY, or run Ollama.")
+    raise RuntimeError("No LLM available. Set ANTHROPIC_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or run Ollama.")
 
 
 def _parse_llm_json(raw: str):
@@ -536,8 +598,6 @@ async def _search(payload: dict) -> SpatialResponse:
     except Exception as e:
         logger.warning("LLM search failed (%s) — keyword fallback", e)
         results = _keyword_search(query, all_scans)
-    else:
-        results = _keyword_search(query, all_scans)
 
     # Enrich results with human-readable name from meta.json
     for r in results:
@@ -736,19 +796,32 @@ async def _status(payload: dict) -> SpatialResponse:
 
 def _demo_scan_result() -> dict:
     return {
-        "scan_id": "demo_scan_001",
+        "scan_id": "scan_001",
         "status": "done",
-        "frames_extracted": 24,
-        "objects_detected": 4,
+        "frames_extracted": 36,
+        "objects_detected": 8,
         "scene_graph": {
-            "scan_id": "demo_scan_001",
+            "scan_id": "scan_001",
             "objects": [
-                {"id": "obj_001", "label": "chair", "confidence": 0.91, "position": {"x_norm": 0.3, "y_norm": 0.6}},
-                {"id": "obj_002", "label": "desk",  "confidence": 0.88, "position": {"x_norm": 0.5, "y_norm": 0.4}},
-                {"id": "obj_003", "label": "window","confidence": 0.95, "position": {"x_norm": 0.9, "y_norm": 0.3}},
-                {"id": "obj_004", "label": "door",  "confidence": 0.97, "position": {"x_norm": 0.1, "y_norm": 0.5}},
+                {"id": "obj_001", "label": "machine",          "confidence": 0.94, "position": {"x_norm": 0.5,  "y_norm": 0.7, "z_m": 6.1}, "world_x_m": 0.0,  "world_y_m": -1.2},
+                {"id": "obj_002", "label": "workbench",        "confidence": 0.91, "position": {"x_norm": 0.25, "y_norm": 0.8, "z_m": 3.2}, "world_x_m": -2.1, "world_y_m": -0.9},
+                {"id": "obj_003", "label": "safety cabinet",   "confidence": 0.88, "position": {"x_norm": 0.8,  "y_norm": 0.6, "z_m": 4.5}, "world_x_m": 2.4,  "world_y_m": -0.7},
+                {"id": "obj_004", "label": "fire extinguisher","confidence": 0.96, "position": {"x_norm": 0.15, "y_norm": 0.5, "z_m": 1.8}, "world_x_m": -3.1, "world_y_m": -0.3},
+                {"id": "obj_005", "label": "tool rack",        "confidence": 0.83, "position": {"x_norm": 0.2,  "y_norm": 0.7, "z_m": 5.1}, "world_x_m": -2.8, "world_y_m": -0.9},
+                {"id": "obj_006", "label": "conveyor",         "confidence": 0.89, "position": {"x_norm": 0.7,  "y_norm": 0.75,"z_m": 5.5}, "world_x_m": 2.1,  "world_y_m": -1.0},
+                {"id": "obj_007", "label": "computer",         "confidence": 0.92, "position": {"x_norm": 0.35, "y_norm": 0.55,"z_m": 2.1}, "world_x_m": -1.0, "world_y_m": -0.2},
+                {"id": "obj_008", "label": "shelf",            "confidence": 0.87, "position": {"x_norm": 0.85, "y_norm": 0.65,"z_m": 7.8}, "world_x_m": 3.2,  "world_y_m": -0.8},
             ],
-            "structure": {"walls": 4, "doors": [{"id": "door_001"}], "windows": [{"id": "win_001"}]},
+            "structure": {"walls": 4, "doors": [{"id": "door_exit"}], "windows": []},
+            "distances": [
+                {"from": "fire extinguisher", "to": "workbench",  "distance_m": 1.89},
+                {"from": "computer",          "to": "workbench",  "distance_m": 1.37},
+                {"from": "machine",           "to": "conveyor",   "distance_m": 2.23},
+                {"from": "workbench",         "to": "tool rack",  "distance_m": 2.12},
+                {"from": "safety cabinet",    "to": "workbench",  "distance_m": 4.10},
+                {"from": "machine",           "to": "workbench",  "distance_m": 3.22},
+            ],
+            "room_size": {"width_m": 10.5, "depth_m": 8.3},
         },
     }
 
@@ -804,13 +877,13 @@ async def _delete(payload: dict) -> SpatialResponse:
 
 def _demo_diff_result() -> dict:
     return {
-        "scan_a": "demo_scan_001",
-        "scan_b": "demo_scan_002",
+        "scan_a": "scan_001",
+        "scan_b": "scan_002",
         "changes": {
-            "moved": [{"label": "chair", "from": {"x_norm": 0.3, "y_norm": 0.6}, "to": {"x_norm": 0.7, "y_norm": 0.2}, "distance": 0.5}],
-            "added": [{"label": "laptop", "position": {"x_norm": 0.5, "y_norm": 0.4}}],
+            "moved": [{"label": "forklift", "from": {"x_norm": 0.6, "y_norm": 0.8}, "to": {"x_norm": 0.3, "y_norm": 0.5}, "distance": 3.1}],
+            "added": [{"label": "pallet", "position": {"x_norm": 0.45, "y_norm": 0.65}}],
             "removed": [],
         },
-        "unchanged_count": 3,
-        "summary": "1 moved (chair). 1 added (laptop).",
+        "unchanged_count": 7,
+        "summary": "1 moved (forklift Δ3.1m). 1 added (pallet). Factory floor otherwise unchanged.",
     }

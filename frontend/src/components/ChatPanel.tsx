@@ -5,12 +5,12 @@ import { api } from "../lib/api";
 interface Message { role: "user" | "ai"; text: string; streaming?: boolean; }
 
 const CHIPS = [
-  "What furniture is in this room?",
-  "How big is this room?",
-  "What's closest to the desk?",
+  "What objects are in this space?",
+  "How big is this area?",
   "Are there any safety hazards?",
+  "What's closest to the machine?",
   "Count all the objects",
-  "How far is the sofa from the TV?",
+  "How far is the workbench from the exit?",
 ];
 
 interface Props { scanId: string }

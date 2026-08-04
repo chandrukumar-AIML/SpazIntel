@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from models import SpatialRequest, SpatialResponse
 from constants import VALID_ACTIONS
+from utils.validators import validate_scan_id
 import spatial_impl
 import pipeline_runner
 
@@ -25,8 +26,9 @@ app = FastAPI(title="Project Atlas — Spatial Intelligence API", version="0.1.0
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=[os.getenv("CORS_ORIGIN", "*")],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -143,6 +145,7 @@ async def upload_scan(files: list[UploadFile] = File(...), mode: str = "room"):
 
 @app.get("/api/spatial/job/{scan_id}")
 async def job_status(scan_id: str):
+    scan_id = validate_scan_id(scan_id)
     job = pipeline_runner.get(scan_id)
     if job is None:
         # Check if scan exists on disk (from a previous server session)
@@ -170,6 +173,7 @@ async def job_status(scan_id: str):
 @app.get("/api/spatial/pointcloud/{scan_id}")
 async def serve_pointcloud(scan_id: str):
     """Serve the colored point cloud PLY for a scan (DUSt3R or COLMAP sparse fallback)."""
+    scan_id = validate_scan_id(scan_id)
     from fastapi.responses import FileResponse
     pc_path = SCANS_DIR / scan_id / "pointcloud" / "pointcloud.ply"
     if not pc_path.exists():
@@ -282,6 +286,7 @@ def _convert_ply_to_splat(ply_path: Path) -> bytes:
 async def serve_splat(scan_id: str):
     """Convert splat.ply → .splat on demand, then redirect to the static file URL.
     StaticFiles works reliably in all browsers; direct binary Response hits browser quirks."""
+    scan_id = validate_scan_id(scan_id)
     from fastapi.responses import RedirectResponse
 
     scan_dir   = SCANS_DIR / scan_id
@@ -305,6 +310,7 @@ async def serve_splat(scan_id: str):
 @app.get("/api/spatial/floor_plan/{scan_id}")
 async def floor_plan(scan_id: str):
     """Generate and return an SVG floor plan for the given scan."""
+    scan_id = validate_scan_id(scan_id)
     import sys, json as _json
     from fastapi.responses import Response
 
@@ -331,6 +337,7 @@ async def floor_plan(scan_id: str):
 @app.get("/api/spatial/export/{scan_id}")
 async def export_scan(scan_id: str):
     """Download scene_graph.json + splat.ply + summary.txt as a zip."""
+    scan_id = validate_scan_id(scan_id)
     import io, zipfile, json as _json
     from fastapi.responses import StreamingResponse
 
@@ -481,6 +488,7 @@ def _ply_to_glb(ply_path: Path, graph_path: Path | None = None) -> bytes:
 
 @app.get("/api/spatial/export/{scan_id}/obj")
 async def export_obj(scan_id: str):
+    scan_id = validate_scan_id(scan_id)
     scan_dir = SCANS_DIR / scan_id
     ply_path = scan_dir / "splat" / "splat.ply"
     if not ply_path.exists():
@@ -497,6 +505,7 @@ async def export_obj(scan_id: str):
 
 @app.get("/api/spatial/export/{scan_id}/gltf")
 async def export_gltf(scan_id: str):
+    scan_id = validate_scan_id(scan_id)
     scan_dir   = SCANS_DIR / scan_id
     ply_path   = scan_dir / "splat" / "splat.ply"
     graph_path = scan_dir / "scene_graph.json"

@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt ruff pytest pytest-timeout pytest-asyncio
+
+      - name: Ruff lint
+        run: ruff check backend/ engines/ qa/
+
+      - name: Run backend tests (DEMO_MODE — no GPU, no API keys)
+        working-directory: backend
+        run: pytest ../qa/ -x --timeout=60
+        env:
+          DEMO_MODE: "true"
+          SKIP_DEPTH: "true"
+          SKIP_COLMAP: "true"
+          SKIP_SPLAT: "true"
+          ANTHROPIC_API_KEY: ""
+          GROQ_API_KEY: ""
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Oxlint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: TypeScript build
+        working-directory: frontend
+        run: npm run build

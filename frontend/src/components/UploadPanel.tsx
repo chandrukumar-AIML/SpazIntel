@@ -157,6 +157,30 @@ export function UploadPanel({ onScanStarted, onOpenCamera, onOpenLive, onOpenGal
           room map
         </button>
       </div>
+
+      <div style={styles.indiaSection}>
+        <div style={styles.indiaSectionTitle}>India B2B Pricing</div>
+        <div style={styles.indiaPlans}>
+          <div style={styles.indiaPlan}>
+            <div style={styles.indiaPlanName}>Starter</div>
+            <div style={styles.indiaPlanPrice}>₹2,999<span style={styles.indiaPlanPer}>/mo</span></div>
+            <div style={styles.indiaPlanDesc}>10 scans · Factory &amp; warehouse</div>
+          </div>
+          <div style={{ ...styles.indiaPlan, ...styles.indiaPlanHighlight }}>
+            <div style={styles.indiaPlanName}>Professional</div>
+            <div style={styles.indiaPlanPrice}>₹9,999<span style={styles.indiaPlanPer}>/mo</span></div>
+            <div style={styles.indiaPlanDesc}>Unlimited scans · API access</div>
+          </div>
+          <div style={styles.indiaPlan}>
+            <div style={styles.indiaPlanName}>Enterprise</div>
+            <div style={{ ...styles.indiaPlanPrice, fontSize: 13 }}>Contact us</div>
+            <div style={styles.indiaPlanDesc}>On-premise · White-label</div>
+          </div>
+        </div>
+        <div style={styles.indiaUseCases}>
+          Factory floors · Warehouses · Real estate · Retail planogram
+        </div>
+      </div>
     </div>
   );
 }
@@ -198,4 +222,15 @@ const styles: Record<string, React.CSSProperties> = {
   existingRow: { fontSize:12, color:"var(--text-3)", display:"flex", alignItems:"center", gap:8, justifyContent:"center" },
   galleryBtn:  { background:"var(--surface-2)", border:"1px solid var(--border)", color:"var(--text-2)", borderRadius:"var(--radius)", padding:"5px 12px", fontSize:12, fontWeight:600, cursor:"pointer" },
   link:        { background:"none", border:"none", color:"var(--accent)", fontSize:12, cursor:"pointer", padding:0, textDecoration:"underline" },
+
+  indiaSection:      { width:"100%", maxWidth:480, display:"flex", flexDirection:"column", gap:10, padding:"16px 20px", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-lg)" },
+  indiaSectionTitle: { fontSize:11, fontWeight:700, color:"var(--text-3)", letterSpacing:".06em", textTransform:"uppercase" as const },
+  indiaPlans:        { display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 },
+  indiaPlan:         { display:"flex", flexDirection:"column", gap:4, padding:"10px 12px", background:"var(--surface-2)", borderRadius:"var(--radius)", border:"1px solid var(--border)" },
+  indiaPlanHighlight:{ border:"1px solid rgba(99,102,241,.4)", background:"rgba(99,102,241,.07)" },
+  indiaPlanName:     { fontSize:11, fontWeight:700, color:"var(--text-3)", letterSpacing:".02em" },
+  indiaPlanPrice:    { fontSize:18, fontWeight:800, color:"var(--text)", letterSpacing:"-.02em" },
+  indiaPlanPer:      { fontSize:11, fontWeight:400, color:"var(--text-3)" },
+  indiaPlanDesc:     { fontSize:10, color:"var(--text-3)", lineHeight:1.4 },
+  indiaUseCases:     { fontSize:11, color:"var(--text-3)", textAlign:"center" as const },
 };

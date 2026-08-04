@@ -85,7 +85,8 @@ def bbox_depth(depth_map: np.ndarray, bbox: list[float]) -> float:
     return float(np.median(region))
 
 
-ROOM_DEPTH_METRES = 5.0  # typical room depth assumption for scale
+import os
+ROOM_DEPTH_METRES = float(os.getenv("ROOM_DEPTH_METRES", "5.0"))
 
 
 def depth_to_metres(normalised_depth: float) -> float:

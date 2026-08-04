@@ -9,12 +9,15 @@ import logging
 from datetime import datetime, timezone
 from collections import defaultdict
 
+import os
+
 logger = logging.getLogger(__name__)
 
 MIN_FRAME_OCCURRENCES = 2
 
-# Typical phone camera FOV — used to project depth → world XY
-_VFOV_DEG = 60.0
+# Camera vertical FOV — override via VFOV_DEG env var
+# iPhone 13/14/15 wide: ~77°, Android varies: 60-80°, webcam: ~55°
+_VFOV_DEG = float(os.getenv("VFOV_DEG", "75.0"))
 _ASPECT    = 1920 / 1080  # 16:9
 
 

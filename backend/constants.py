@@ -25,6 +25,8 @@ PROMPT_SPATIAL_QA_VERSION = "v2.0"
 PROMPT_CHANGE_DETECT_VERSION = "v1.0"
 
 # LLM fallback chain
-# Chain: Claude (cloud) → Groq free tier → error
+# Claude → Groq → Gemini → OpenAI → Ollama → DEMO_MODE canned response
 LLM_PRIMARY        = "claude-sonnet-5"                # needs ANTHROPIC_API_KEY
 LLM_GROQ_MODEL     = "llama-3.1-8b-instant"          # Groq free tier, needs GROQ_API_KEY
+LLM_GEMINI_MODEL   = "gemini-1.5-flash"              # needs GEMINI_API_KEY
+LLM_OPENAI_MODEL   = "gpt-3.5-turbo"                 # needs OPENAI_API_KEY
