@@ -42,12 +42,20 @@ async def health():
 
 @app.get("/api/health/keys")
 async def key_status():
-    """Returns which LLM keys are configured (without revealing the values)."""
+    """Returns which LLM providers are available (without revealing key values)."""
+    import urllib.request as _ur
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
     groq_key      = os.getenv("GROQ_API_KEY", "")
+    ollama_url    = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    try:
+        _ur.urlopen(f"{ollama_url}/api/tags", timeout=2)
+        ollama_ok = True
+    except Exception:
+        ollama_ok = False
     return {
         "anthropic": bool(anthropic_key and anthropic_key != "your_key_here"),
         "groq":      bool(groq_key and groq_key != "your_key_here"),
+        "ollama":    ollama_ok,
     }
 
 

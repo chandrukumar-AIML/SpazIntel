@@ -41,11 +41,16 @@ export function ChatPanel({ scanId }: Props) {
   });
   const [input,   setInput]   = useState("");
   const [loading, setLoading] = useState(false);
-  const [keyOk,   setKeyOk]   = useState<boolean | null>(null);
+  const [keyOk,    setKeyOk]    = useState<boolean | null>(null);
+  const [llmLabel, setLlmLabel] = useState<string>("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api.keyStatus().then(s => setKeyOk(s.anthropic || s.groq)).catch(() => setKeyOk(false));
+    api.keyStatus().then(s => {
+      const ok = s.anthropic || s.groq || s.ollama;
+      setKeyOk(ok);
+      setLlmLabel(s.anthropic ? "claude" : s.groq ? "groq" : s.ollama ? "ollama" : "");
+    }).catch(() => { setKeyOk(false); setLlmLabel(""); });
   }, []);
 
   useEffect(() => {
@@ -93,9 +98,9 @@ export function ChatPanel({ scanId }: Props) {
         setLoading(false);
       },
       (err) => {
-        const isKey = /api.?key|authentication|no llm|your_key_here/i.test(err);
+        const isKey = /no llm available|your_key_here/i.test(err);
         const msg = isKey
-          ? "Q&A needs an API key. Add ANTHROPIC_API_KEY=sk-... to your .env and restart the backend."
+          ? "No LLM available. Add ANTHROPIC_API_KEY, GROQ_API_KEY, or run Ollama locally."
           : `Error: ${err}`;
         setMessages(m => {
           const copy = [...m];
@@ -120,7 +125,10 @@ export function ChatPanel({ scanId }: Props) {
         <span style={{ ...s.headerDot, background: keyOk === true ? "var(--success)" : keyOk === false ? "var(--error, #ef4444)" : "var(--text-3)" }} />
         Spatial Q&amp;A
         {keyOk === false && (
-          <span style={s.keyWarning} title="Set ANTHROPIC_API_KEY or GROQ_API_KEY in .env">no key</span>
+          <span style={s.keyWarning} title="Set ANTHROPIC_API_KEY, GROQ_API_KEY, or run Ollama">no key</span>
+        )}
+        {keyOk === true && llmLabel && (
+          <span style={{ ...s.keyWarning, background: "var(--success, #22c55e)", color: "#fff" }}>{llmLabel}</span>
         )}
         <span style={s.badge}>{scanId}</span>
         {messages.length > 1 && (

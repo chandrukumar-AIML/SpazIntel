@@ -51,7 +51,7 @@ export const api = {
     }
   },
 
-  keyStatus: (): Promise<{ anthropic: boolean; groq: boolean }> =>
+  keyStatus: (): Promise<{ anthropic: boolean; groq: boolean; ollama: boolean }> =>
     fetch(`${BASE}/api/health/keys`).then(r => r.json()),
 
   diff: (scan_id_a: string, scan_id_b: string) =>
