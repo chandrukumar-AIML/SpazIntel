@@ -20,7 +20,7 @@ PASS = 0
 FAIL = 0
 
 
-def test(name: str, fn):
+def _run(name: str, fn):
     global PASS, FAIL
     try:
         fn()
@@ -144,19 +144,19 @@ if __name__ == "__main__":
     print("=" * 40)
 
     print("\n[diff.py]")
-    test("diff: added object detected", test_diff_added)
-    test("diff: removed object detected", test_diff_removed)
-    test("diff: moved object detected", test_diff_moved)
-    test("diff: no change case", test_diff_no_change)
-    test("diff: summary string format", test_diff_summary_format)
+    _run("diff: added object detected", test_diff_added)
+    _run("diff: removed object detected", test_diff_removed)
+    _run("diff: moved object detected", test_diff_moved)
+    _run("diff: no change case", test_diff_no_change)
+    _run("diff: summary string format", test_diff_summary_format)
 
     print("\n[scene_graph.py]")
-    test("scene graph: builds from detections", test_scene_graph_build)
-    test("scene graph: filters single-frame noise", test_scene_graph_filters_noise)
+    _run("scene graph: builds from detections", test_scene_graph_build)
+    _run("scene graph: filters single-frame noise", test_scene_graph_filters_noise)
 
     print("\n[backend demo mode]")
-    test("demo scan result structure", test_demo_scan)
-    test("demo diff result structure", test_demo_diff)
+    _run("demo scan result structure", test_demo_scan)
+    _run("demo diff result structure", test_demo_diff)
 
     print("\n" + "=" * 40)
     print(f"Result: {PASS}/{PASS+FAIL} passed")
