@@ -330,6 +330,32 @@ async def _call_llm_chain(system_prompt: str, user_msg: str, max_tokens: int = 5
     raise RuntimeError("No LLM available. Set ANTHROPIC_API_KEY, GROQ_API_KEY, or run Ollama.")
 
 
+def _parse_llm_json(raw: str):
+    """Parse JSON from LLM output robustly: strips fences, fixes missing commas, handles truncation."""
+    import re
+    raw = raw.strip()
+    if raw.startswith("```"):
+        parts = raw.split("```")
+        raw = parts[1].lstrip("json").strip() if len(parts) > 1 else raw
+    # Fix missing commas between consecutive string values in arrays (common llama3 output)
+    raw = re.sub(r'"(\s+)"', r'",\1"', raw)
+    # Try parsing (raw_decode ignores trailing explanation text)
+    try:
+        val, _ = json.JSONDecoder().raw_decode(raw)
+        return val
+    except json.JSONDecodeError:
+        pass
+    # Repair truncated JSON (missing closing brackets/braces)
+    repaired = raw.rstrip().rstrip(",")
+    # If truncated mid-string (doesn't end with " ] } ), close the string first
+    if repaired and repaired[-1] not in ('"', "]", "}", ")"):
+        repaired += '"'
+    repaired += "]" * max(0, repaired.count("[") - repaired.count("]"))
+    repaired += "}" * max(0, repaired.count("{") - repaired.count("}"))
+    val, _ = json.JSONDecoder().raw_decode(repaired)
+    return val
+
+
 def _load_prompt(filename: str) -> str:
     prompt_path = Path(__file__).parent / "prompts" / filename
     if prompt_path.exists():
@@ -575,15 +601,8 @@ async def _llm_search_rank(
     summaries     = "\n".join(_scan_summary(sid, g) for sid, g in scans)
     user_msg      = f'Query: "{query}"\n\nScans:\n{summaries}'
 
-    raw = await _call_llm_chain(system_prompt, user_msg, max_tokens=600)
-
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-
-    ranked = json.loads(raw)
+    raw = await _call_llm_chain(system_prompt, user_msg, max_tokens=900)
+    ranked = _parse_llm_json(raw)
 
     # Decorate each result with preview_objects from the scene graph
     graph_map = {sid: g for sid, g in scans}
@@ -691,25 +710,7 @@ async def _llm_report(scene_graph: dict) -> dict:
     )
 
     raw = await _call_llm_chain(system_prompt, user_msg, max_tokens=1500)
-
-    # Strip accidental markdown fences
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-
-    # Repair truncated JSON from small models (close unclosed arrays/objects)
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        repaired = raw.rstrip()
-        if not repaired.endswith('"') and not repaired.endswith("}") and not repaired.endswith("]"):
-            repaired = repaired.rstrip(",") + '"'
-        open_brackets = repaired.count("[") - repaired.count("]")
-        open_braces   = repaired.count("{") - repaired.count("}")
-        repaired += "]" * max(0, open_brackets) + "}" * max(0, open_braces)
-        return json.loads(repaired)
+    return _parse_llm_json(raw)
 
 
 async def _status(payload: dict) -> SpatialResponse:
