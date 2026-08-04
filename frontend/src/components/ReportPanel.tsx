@@ -141,7 +141,7 @@ export function ReportPanel({ scanId }: Props) {
 
         {insights.length === 0 && state === "done" && (
           <div style={s.noInsights}>
-            No AI key configured — add <code>ANTHROPIC_API_KEY</code> to .env for insights.
+            No insights generated — check your LLM provider (Claude, Groq, or Ollama).
           </div>
         )}
       </div>
@@ -181,12 +181,12 @@ function LoadingState() {
 }
 
 function ErrorState({ msg, onRetry }: { msg: string; onRetry: () => void }) {
-  const isKey = /api.?key|authentication|401/i.test(msg);
+  const isKey = /no llm available|your_key_here/i.test(msg);
   return (
     <div style={s.centred}>
       <div style={{ color: "#f87171", fontSize: 13, textAlign: "center", padding: "0 20px" }}>
         {isKey
-          ? "Add ANTHROPIC_API_KEY to .env to enable AI reports."
+          ? "No LLM available. Add ANTHROPIC_API_KEY, GROQ_API_KEY, or run Ollama locally."
           : `Error: ${msg}`}
       </div>
       <button style={s.retryBtn} onClick={onRetry}>Retry</button>

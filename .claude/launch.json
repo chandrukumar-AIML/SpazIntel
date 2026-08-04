@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "atlas-backend",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "start_backend.bat"],
+      "port": 8000
+    },
+    {
       "name": "atlas-frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "frontend"],
