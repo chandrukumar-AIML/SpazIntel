@@ -23,7 +23,9 @@ DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
 _DEFAULT_SCANS = str(Path(__file__).parent.parent / "data" / "scans")
 SCANS_DIR = Path(os.getenv("SCANS_DIR", _DEFAULT_SCANS))
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_API_KEY      = os.getenv("GROQ_API_KEY", "")
+OLLAMA_BASE_URL   = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL      = os.getenv("OLLAMA_MODEL", "llama3.2")
 
 
 async def dispatch(action: str, payload: dict[str, Any]) -> SpatialResponse:
@@ -170,20 +172,7 @@ async def _llm_query(question: str, scene_graph: dict) -> str:
         f"\n\nQuestion: {question}"
     )
 
-    if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_key_here":
-        try:
-            return await asyncio.to_thread(_call_claude, system_prompt, user_msg)
-        except Exception as e:
-            logger.warning("Claude failed (%s) — falling back to Groq", e)
-
-    if GROQ_API_KEY and GROQ_API_KEY != "your_key_here":
-        try:
-            return await asyncio.to_thread(_call_groq, system_prompt, user_msg)
-        except Exception as e:
-            logger.warning("Groq failed (%s)", e)
-            raise RuntimeError(f"All LLM providers failed. Last error: {e}") from e
-
-    raise RuntimeError("No LLM available. Set ANTHROPIC_API_KEY or GROQ_API_KEY in .env.")
+    return await _call_llm_chain(system_prompt, user_msg, max_tokens=512)
 
 
 def _call_claude(system_prompt: str, user_msg: str, max_tokens: int = 512) -> str:
@@ -265,10 +254,19 @@ async def query_stream(scan_id: str, question: str):
             yield result
             return
         except Exception as e:
+            logger.warning("Groq stream failed (%s) — Ollama fallback", e)
+
+    if OLLAMA_BASE_URL:
+        try:
+            import asyncio
+            result = await asyncio.to_thread(_call_ollama, system_prompt, user_msg)
+            yield result
+            return
+        except Exception as e:
             yield f"Error: {e}"
             return
 
-    yield "No LLM available. Add ANTHROPIC_API_KEY or GROQ_API_KEY to your .env and restart the backend."
+    yield "No LLM available. Add ANTHROPIC_API_KEY, GROQ_API_KEY, or run Ollama locally."
 
 
 def _call_groq(system_prompt: str, user_msg: str, max_tokens: int = 512) -> str:
@@ -284,6 +282,52 @@ def _call_groq(system_prompt: str, user_msg: str, max_tokens: int = 512) -> str:
     )
     logger.info("llm=groq model=%s", LLM_GROQ_MODEL)
     return resp.choices[0].message.content
+
+
+def _call_ollama(system_prompt: str, user_msg: str, max_tokens: int = 512) -> str:
+    import urllib.request
+    body = json.dumps({
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_msg},
+        ],
+        "stream": False,
+        "options": {"num_predict": max_tokens},
+    }).encode()
+    req = urllib.request.Request(
+        f"{OLLAMA_BASE_URL}/api/chat", data=body,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=120) as r:
+        data = json.loads(r.read())
+    logger.info("llm=ollama model=%s", OLLAMA_MODEL)
+    return data["message"]["content"]
+
+
+async def _call_llm_chain(system_prompt: str, user_msg: str, max_tokens: int = 512) -> str:
+    """Claude → Groq → Ollama fallback chain. Tries each in order until one succeeds."""
+    import asyncio
+
+    if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_key_here":
+        try:
+            return await asyncio.to_thread(_call_claude, system_prompt, user_msg, max_tokens)
+        except Exception as e:
+            logger.warning("Claude failed (%s) — trying Groq", e)
+
+    if GROQ_API_KEY and GROQ_API_KEY != "your_key_here":
+        try:
+            return await asyncio.to_thread(_call_groq, system_prompt, user_msg, max_tokens)
+        except Exception as e:
+            logger.warning("Groq failed (%s) — trying Ollama", e)
+
+    if OLLAMA_BASE_URL:
+        try:
+            return await asyncio.to_thread(_call_ollama, system_prompt, user_msg, max_tokens)
+        except Exception as e:
+            raise RuntimeError(f"All LLM providers failed. Last: {e}") from e
+
+    raise RuntimeError("No LLM available. Set ANTHROPIC_API_KEY, GROQ_API_KEY, or run Ollama.")
 
 
 def _load_prompt(filename: str) -> str:
@@ -358,14 +402,10 @@ async def _llm_diff_summary(report: dict) -> str:
         "Write the summary."
     )
 
-    if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_key_here":
-        return await asyncio.to_thread(_call_claude, system_prompt, user_msg, 256)
-
-    if GROQ_API_KEY and GROQ_API_KEY != "your_key_here":
-        return await asyncio.to_thread(_call_groq, system_prompt, user_msg, 256)
-
-    # No LLM — return the rule-based summary unchanged
-    return report.get("summary", "No changes detected.")
+    try:
+        return await _call_llm_chain(system_prompt, user_msg, max_tokens=256)
+    except Exception:
+        return report.get("summary", "No changes detected.")
 
 
 async def _scene_graph(payload: dict) -> SpatialResponse:
@@ -465,18 +505,11 @@ async def _search(payload: dict) -> SpatialResponse:
         })
 
     results: list[dict] = []
-    if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_key_here":
-        try:
-            results = await _llm_search_rank(query, all_scans)
-        except Exception as e:
-            logger.warning("search LLM failed (%s) — keyword fallback", e)
-            results = _keyword_search(query, all_scans)
-    elif GROQ_API_KEY and GROQ_API_KEY != "your_key_here":
-        try:
-            results = await _llm_search_rank(query, all_scans, use_groq=True)
-        except Exception as e:
-            logger.warning("Groq search failed (%s) — keyword fallback", e)
-            results = _keyword_search(query, all_scans)
+    try:
+        results = await _llm_search_rank(query, all_scans)
+    except Exception as e:
+        logger.warning("LLM search failed (%s) — keyword fallback", e)
+        results = _keyword_search(query, all_scans)
     else:
         results = _keyword_search(query, all_scans)
 
@@ -537,17 +570,12 @@ def _keyword_search(query: str, scans: list[tuple[str, dict]]) -> list[dict]:
 async def _llm_search_rank(
     query: str,
     scans: list[tuple[str, dict]],
-    use_groq: bool = False,
 ) -> list[dict]:
-    import asyncio
     system_prompt = _load_prompt("spatial_search_v1.txt")
     summaries     = "\n".join(_scan_summary(sid, g) for sid, g in scans)
     user_msg      = f'Query: "{query}"\n\nScans:\n{summaries}'
 
-    if use_groq:
-        raw = await asyncio.to_thread(_call_groq, system_prompt, user_msg, 600)
-    else:
-        raw = await asyncio.to_thread(_call_claude, system_prompt, user_msg, 600)
+    raw = await _call_llm_chain(system_prompt, user_msg, max_tokens=600)
 
     raw = raw.strip()
     if raw.startswith("```"):
@@ -662,18 +690,7 @@ async def _llm_report(scene_graph: dict) -> dict:
         "\n\nKey distances:\n" + ("\n".join(dist_rows) if dist_rows else "  (no depth data)")
     )
 
-    raw = ""
-    if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_key_here":
-        try:
-            raw = await asyncio.to_thread(_call_claude, system_prompt, user_msg, 800)
-        except Exception as e:
-            logger.warning("Claude report failed (%s) — trying Groq", e)
-
-    if not raw and GROQ_API_KEY and GROQ_API_KEY != "your_key_here":
-        raw = await asyncio.to_thread(_call_groq, system_prompt, user_msg, 800)
-
-    if not raw:
-        raise RuntimeError("No LLM available for report generation")
+    raw = await _call_llm_chain(system_prompt, user_msg, max_tokens=1500)
 
     # Strip accidental markdown fences
     raw = raw.strip()
@@ -681,7 +698,18 @@ async def _llm_report(scene_graph: dict) -> dict:
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
-    return json.loads(raw)
+
+    # Repair truncated JSON from small models (close unclosed arrays/objects)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        repaired = raw.rstrip()
+        if not repaired.endswith('"') and not repaired.endswith("}") and not repaired.endswith("]"):
+            repaired = repaired.rstrip(",") + '"'
+        open_brackets = repaired.count("[") - repaired.count("]")
+        open_braces   = repaired.count("{") - repaired.count("}")
+        repaired += "]" * max(0, open_brackets) + "}" * max(0, open_braces)
+        return json.loads(repaired)
 
 
 async def _status(payload: dict) -> SpatialResponse:
